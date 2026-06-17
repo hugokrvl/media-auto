@@ -20,23 +20,36 @@ Critères d'évaluation :
 
 Tu réponds UNIQUEMENT en JSON valide, sans markdown, sans commentaires."""
 
-ANALYSIS_PROMPT = """Analyse cet article et retourne un JSON avec exactement cette structure :
+ANALYSIS_PROMPT = """Analyse cet article et prépare une infographie en FRANÇAIS.
+Retourne un JSON avec EXACTEMENT cette structure :
 
 {
   "score": <entier 0-10>,
   "verified": <true si info vérifiable et fiable, false sinon>,
   "keep": <true si score >= 6 et verified, false sinon>,
   "category": "<finance|tech|general|sport|factcheck>",
-  "key_data": [<liste de 1-3 chiffres/faits clés extraits de l'article, ex: "+12% de croissance">],
-  "chart_type": "<kpi|donut|bar|infographic>",
+  "title_fr": "<titre court et accrocheur EN FRANÇAIS, max 75 caractères>",
+  "subtitle_fr": "<sous-titre court EN FRANÇAIS : contexte/période/unité, max 50 caractères>",
+  "chart_type": "<kpi|donut|bar|courbe|infographic>",
+  "chart_data": [<voir format selon chart_type ci-dessous>],
+  "key_points": [<2-4 points clés EN FRANÇAIS si chart_type=infographic, sinon []>],
   "reason": "<1 phrase expliquant le score>"
 }
 
-chart_type guide :
-- kpi : article avec des chiffres clés isolés (ex: résultats financiers, stats)
-- donut : article avec des répartitions/comparaisons (ex: parts de marché, votes)
-- bar : article avec une évolution dans le temps (ex: cours boursier, croissance)
-- infographic : article narratif sans données structurées (fallback)
+RÈGLES chart_data (TRÈS IMPORTANT — données réelles tirées de l'article) :
+- chart_type "kpi" : 2-3 chiffres clés isolés. Format :
+    [{"label": "Inflation", "value": "3.2", "unit": "%", "evolution": "-0.4"}, ...]
+    (evolution = variation en %, "" si inconnue ; value en nombre, point décimal)
+- chart_type "donut" : répartition/parts (total = 100 idéalement). Format :
+    [{"label": "Apple", "value": 28}, {"label": "Samsung", "value": 22}, ...]
+- chart_type "bar" : comparaison/classement. Format :
+    [{"label": "OpenAI", "value": 40}, {"label": "Anthropic", "value": 25}, ...]
+- chart_type "courbe" : évolution temporelle. Format :
+    [{"label": "Jan", "value": 92}, {"label": "Fév", "value": 88}, ...]
+- chart_type "infographic" : PAS de données chiffrées exploitables -> chart_data: [], remplis key_points.
+
+N'INVENTE JAMAIS de chiffres. Si l'article ne contient pas de données chiffrées
+fiables, utilise chart_type "infographic" avec des key_points factuels.
 
 Article :
 Titre: __TITLE__
@@ -79,7 +92,7 @@ def _analyze_one(article: dict) -> dict:
             {"role": "user", "content": prompt},
         ],
         temperature=0.2,
-        max_tokens=400,
+        max_tokens=700,
         response_format={"type": "json_object"},
     )
 

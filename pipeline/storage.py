@@ -48,7 +48,7 @@ def save_post(article: dict, captions: dict, image_urls: dict) -> str:
         "category": article.get("category", ""),
         "relevance_score": article.get("score", 0),
         "verified": article.get("verified", False),
-        "key_data": article.get("key_data", []),
+        "key_data": article.get("key_points", []),
         "chart_type": article.get("chart_type", "infographic"),
         "caption_twitter": captions.get("twitter", ""),
         "caption_instagram": captions.get("instagram", ""),

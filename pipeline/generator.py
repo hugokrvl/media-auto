@@ -11,6 +11,7 @@ client = Groq(api_key=os.environ["GROQ_API_KEY"])
 
 SYSTEM_PROMPT = """Tu es un community manager expert en médias économiques et tech.
 Tu rédiges des posts viraux, informatifs et engageants pour les réseaux sociaux.
+Tu écris TOUJOURS en FRANÇAIS, même si l'article source est en anglais.
 Ton style : direct, factuel, accrocheur. Pas de phrases creuses.
 Tu réponds UNIQUEMENT en JSON valide, sans markdown."""
 
@@ -22,7 +23,7 @@ Catégorie : {category}
 Points clés : {key_data}
 Résumé : {summary}
 
-Contraintes :
+Écris EN FRANÇAIS. Contraintes :
 - Twitter/X : max 260 caractères, 2-3 hashtags pertinents, emoji autorisé
 - Instagram : 150-300 mots, storytelling, 8-12 hashtags thématiques, émojis
 - LinkedIn : 200-400 mots, ton professionnel-analytique, 3-5 hashtags, pas d'émoji excessif
@@ -37,11 +38,17 @@ JSON attendu :
 
 def generate_captions(article: dict) -> dict:
     """Retourne les captions pour les 3 réseaux."""
+    # Points clés : depuis chart_data (labels:valeurs) ou key_points
+    kd = article.get("key_points") or []
+    if not kd and article.get("chart_data"):
+        kd = [f"{d.get('label', '')}: {d.get('value', '')}{d.get('unit', '')}"
+              for d in article["chart_data"] if isinstance(d, dict)]
+
     prompt = POST_PROMPT.format(
-        title=article["title"],
+        title=article.get("title_fr") or article["title"],
         source=article["source"],
         category=article.get("category", ""),
-        key_data=", ".join(article.get("key_data", [])) or "Voir article",
+        key_data=", ".join(kd) or "Voir article",
         summary=article.get("summary", "")[:400],
     )
 
