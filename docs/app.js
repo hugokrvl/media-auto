@@ -1,6 +1,6 @@
 // Config Supabase — remplacer par vos vraies valeurs après création du projet
 const SUPABASE_URL = "https://knjmhjecrmpummsqiosw.supabase.co";
-const SUPABASE_ANON_KEY = "sb_publishable_F_hJ_6eT-figSY0uTPeiMw_X7eQ245R";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imtuam1oamVjcm1wdW1tc3Fpb3N3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE3MTY0MTQsImV4cCI6MjA5NzI5MjQxNH0.kzcKUb06wgMIV55gtVPzJxyGVKZWjJUDNCU_3JXmmBU";
 
 // ── State ──────────────────────────────────────────────────────────────────
 let currentView = "pending";
