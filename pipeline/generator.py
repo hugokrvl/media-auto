@@ -53,6 +53,7 @@ def generate_captions(article: dict) -> dict:
         ],
         temperature=0.7,
         max_tokens=800,
+        response_format={"type": "json_object"},
     )
 
     raw = response.choices[0].message.content.strip()
