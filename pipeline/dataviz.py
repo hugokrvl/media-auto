@@ -182,8 +182,8 @@ def _make_infographic(article: dict, size: tuple) -> bytes:
     ax.axis("off")
 
     # Barre déco gauche
-    ax.axvline(x=0.03, ymin=0.1, ymax=0.9, color=YELLOW, linewidth=4,
-               transform=ax.transAxes)
+    ax.plot([0.03, 0.03], [0.1, 0.9], color=YELLOW, linewidth=4,
+            transform=ax.transAxes, clip_on=False)
 
     # Catégorie tag
     cat = article.get("category", "").upper()
@@ -210,8 +210,8 @@ def _make_infographic(article: dict, size: tuple) -> bytes:
         y -= 0.12
 
     # Séparateur
-    ax.axhline(y=0.12, xmin=0.07, xmax=0.93, color=GRAY, linewidth=0.5,
-               transform=ax.transAxes)
+    ax.plot([0.07, 0.93], [0.12, 0.12], color=GRAY, linewidth=0.5,
+            transform=ax.transAxes, clip_on=False)
 
     _add_footer(ax, article)
     return _fig_to_bytes(fig)
