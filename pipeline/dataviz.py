@@ -87,23 +87,28 @@ def _draw_monogram(fig):
 
 
 def _draw_header(fig, ax, title, subtitle):
-    """Titre serif éditorial + sous-titre. Renvoie le y bas du header."""
+    """Titre serif éditorial COMPACT + sous-titre. Renvoie le y bas du header.
+    Header volontairement resserré pour laisser un maximum de place à la data."""
     F = fig._hk_fonts
     figH = fig.get_size_inches()[1]
-    lines = textwrap.wrap(title, 30)[:3]
-    t_fs = 33 if len(lines) <= 2 else 27
-    y = 0.815
+    # Titre limité à 2 lignes pour maximiser l'espace data
+    lines = textwrap.wrap(title, 32)
+    if len(lines) > 2:
+        lines = lines[:2]
+        lines[1] = lines[1][:30].rstrip() + "…"
+    t_fs = 30 if len(lines) <= 1 else 27
+    y = 0.835
     for line in lines:
         ax.text(0.075, y, line, ha="left", va="top", color=B.INK,
                 fontproperties=F["title"], fontsize=t_fs, zorder=5)
-        y -= (t_fs + 9) / (figH * 72)
+        y -= (t_fs + 6) / (figH * 72)
     if subtitle:
-        ax.text(0.075, y - 0.004, subtitle.upper(), ha="left", va="top", color=B.MUSTARD_DK,
-                fontproperties=F["body_sb"], fontsize=12.5, zorder=5)
-        y -= 0.035
+        ax.text(0.075, y - 0.002, subtitle.upper(), ha="left", va="top", color=B.MUSTARD_DK,
+                fontproperties=F["body_sb"], fontsize=12, zorder=5)
+        y -= 0.028
     # Filet moutarde sous le header
-    ax.plot([0.075, 0.30], [y - 0.01, y - 0.01], color=B.MUSTARD, linewidth=2.5, zorder=5)
-    return y - 0.045
+    ax.plot([0.075, 0.27], [y - 0.008, y - 0.008], color=B.MUSTARD, linewidth=2.5, zorder=5)
+    return y - 0.025
 
 
 def _draw_footer(fig, ax, source):
@@ -150,37 +155,41 @@ def _make_kpi(fig, ax, article, top):
     asp = fig.get_size_inches()[0] / fig.get_size_inches()[1]
     cols = B.variations(B.MUSTARD, len(data))
     n = len(data)
-    gap = 0.03
-    x0, x1 = 0.085, 0.915
+    gap = 0.028
+    x0, x1 = 0.075, 0.925
     cw = (x1 - x0 - gap * (n - 1)) / n
-    ch = min(0.36, cw * asp * 1.08)
-    y = 0.16 + (top - 0.16 - ch) * 0.45
+    # Cartes XXL : on remplit toute la zone data disponible
+    avail = top - 0.155
+    ch = min(avail, cw * asp * 1.25)
+    y = 0.155 + (avail - ch) / 2
+    # Chiffre dimensionné selon la largeur de carte (gros = data héros)
+    num_fs = max(48, min(96, cw * 220))
     for i, r in enumerate(data):
         x = x0 + i * (cw + gap)
         col = cols[i]
-        ax.add_patch(FancyBboxPatch((x, y), cw, ch, boxstyle="round,pad=0,rounding_size=0.02",
+        ax.add_patch(FancyBboxPatch((x, y), cw, ch, boxstyle="round,pad=0,rounding_size=0.022",
                      mutation_aspect=asp, facecolor=B.CREAM_2, edgecolor=B.INK,
-                     linewidth=1.6, zorder=2))
-        ax.add_patch(Rectangle((x, y + ch - 0.014), cw, 0.014, color=col, zorder=3))
+                     linewidth=2.0, zorder=2))
+        ax.add_patch(Rectangle((x, y + ch - 0.018), cw, 0.018, color=col, zorder=3))
         cx = x + cw / 2
         val = B.fr(r.get("value", 0))
         unit = str(r.get("unit", "")).strip()
-        # Gros chiffre Anton
-        ax.text(cx, y + ch * 0.62, val, ha="center", va="center", color=B.INK,
-                fontproperties=F["num"], fontsize=46, zorder=4)
+        # CHIFFRE ÉNORME Anton (le héros du post)
+        ax.text(cx, y + ch * 0.60, val, ha="center", va="center", color=B.INK,
+                fontproperties=F["num"], fontsize=num_fs, zorder=4)
         if unit:
             ax.text(cx, y + ch * 0.40, unit, ha="center", va="center", color=B.MUSTARD_DK,
-                    fontproperties=F["body_sb"], fontsize=14, zorder=4)
-        ax.text(cx, y + ch * 0.26, str(r.get("label", ""))[:26].upper(), ha="center", va="center",
-                color=B.INK_SOFT, fontproperties=F["body_md"], fontsize=11, zorder=4)
+                    fontproperties=F["num"], fontsize=max(18, num_fs * 0.34), zorder=4)
+        ax.text(cx, y + ch * 0.25, str(r.get("label", ""))[:26].upper(), ha="center", va="center",
+                color=B.INK_SOFT, fontproperties=F["body_sb"], fontsize=13, zorder=4)
         ev = str(r.get("evolution", "")).replace("%", "").replace(",", ".").strip()
         try:
             evf = float(ev)
             up = evf >= 0
             sign = "+" if up else "−"
-            ax.text(cx, y + ch * 0.10, f"{sign}{abs(evf):.1f} %".replace(".", ","),
+            ax.text(cx, y + ch * 0.105, f"{sign}{abs(evf):.1f} %".replace(".", ","),
                     ha="center", va="center", color=B.GREEN if up else B.RED,
-                    fontproperties=F["body_sb"], fontsize=12.5, zorder=4)
+                    fontproperties=F["body_sb"], fontsize=15, zorder=4)
         except Exception:
             pass
     return fig
@@ -191,32 +200,34 @@ def _make_donut(fig, ax, article, top):
     labels, vals = _series(article.get("chart_data"))
     if not vals or sum(vals) == 0:
         return _make_infographic(fig, ax, article, top)
-    cax = _content_axes(fig, top)
+    # Donut plus grand : on lui donne quasi toute la zone data
+    cax = fig.add_axes([0.12, 0.20, 0.76, max(0.3, top - 0.21)])
     cax.set_facecolor(B.CREAM)
     cols = B.variations(B.MUSTARD, len(vals))
     total = sum(vals)
 
     def autop(p):
-        return f"{p:.0f}%" if p >= 5 else ""
+        return f"{p:.0f}%" if p >= 4 else ""
 
     wedges, _t, autotxt = cax.pie(
         vals, colors=cols, startangle=90, counterclock=False,
-        autopct=autop, pctdistance=0.79,
-        wedgeprops=dict(width=0.40, edgecolor=B.CREAM, linewidth=3.5),
-        textprops=dict(fontproperties=F["body_sb"], fontsize=12.5))
+        autopct=autop, pctdistance=0.80, radius=1.18,
+        wedgeprops=dict(width=0.42, edgecolor=B.CREAM, linewidth=4),
+        textprops=dict(fontproperties=F["num"], fontsize=18))
     for t, c in zip(autotxt, cols):
         t.set_color(B.INK if B.lum(c) > 0.58 else B.CREAM)
     cax.set(aspect="equal")
-    cax.text(0, 0.10, B.fr(total), ha="center", va="center", color=B.INK,
-             fontproperties=F["num"], fontsize=34)
-    cax.text(0, -0.16, "TOTAL", ha="center", va="center", color=B.MUTED,
-             fontproperties=F["body_sb"], fontsize=11)
-    leg = cax.legend(wedges, labels, loc="lower center", bbox_to_anchor=(0.5, -0.16),
-                     ncol=min(3, len(labels)), frameon=False, fontsize=11,
-                     handlelength=1.0, columnspacing=1.3)
+    # Gros total central
+    cax.text(0, 0.12, B.fr(total), ha="center", va="center", color=B.INK,
+             fontproperties=F["num"], fontsize=52)
+    cax.text(0, -0.22, "TOTAL", ha="center", va="center", color=B.MUTED,
+             fontproperties=F["body_sb"], fontsize=13)
+    leg = cax.legend(wedges, labels, loc="lower center", bbox_to_anchor=(0.5, -0.20),
+                     ncol=min(3, len(labels)), frameon=False, fontsize=13,
+                     handlelength=1.1, columnspacing=1.4)
     for txt in leg.get_texts():
         txt.set_color(B.INK)
-        txt.set_fontproperties(F["body_md"])
+        txt.set_fontproperties(F["body_sb"])
     return fig
 
 
@@ -225,28 +236,30 @@ def _make_bar(fig, ax, article, top):
     labels, vals = _series(article.get("chart_data"))
     if not vals:
         return _make_infographic(fig, ax, article, top)
-    cax = _content_axes(fig, top)
+    # Label AU-DESSUS de chaque barre (pas de marge gauche perdue, look éditorial)
+    cax = fig.add_axes([0.075, 0.155, 0.85, max(0.3, top - 0.165)])
     cax.set_facecolor(B.CREAM)
-    order = sorted(range(len(vals)), key=lambda i: vals[i])
+    order = sorted(range(len(vals)), key=lambda i: vals[i], reverse=True)
     labels = [labels[i] for i in order]
     vals = [vals[i] for i in order]
-    cols = B.variations(B.MUSTARD, len(vals))[::-1]
+    cols = B.variations(B.MUSTARD, len(vals))
+    ypos = list(range(len(vals)))[::-1]  # plus grand en haut
     for sp in cax.spines.values():
         sp.set_visible(False)
-    cax.barh(range(len(vals)), vals, color=cols, height=0.60, zorder=3,
-             edgecolor=B.INK, linewidth=1.2)
-    cax.set_yticks(range(len(vals)))
-    cax.set_yticklabels([l.upper() for l in labels], color=B.INK, fontsize=12)
-    for lab in cax.get_yticklabels():
-        lab.set_fontproperties(F["body_sb"])
-    cax.tick_params(axis="x", colors=B.MUTED, labelsize=9, length=0)
-    cax.tick_params(axis="y", length=0)
-    cax.grid(axis="x", color=B.MUTED, alpha=0.18, zorder=0)
+    cax.barh(ypos, vals, color=cols, height=0.52, zorder=3,
+             edgecolor=B.INK, linewidth=1.6)
+    cax.set_yticks([])
+    cax.set_xticks([])
     mx = max(vals) or 1
-    for i, v in enumerate(vals):
-        cax.text(v + mx * 0.015, i, B.fr(v), va="center", ha="left", color=B.INK,
-                 fontproperties=F["num"], fontsize=16)
-    cax.margins(x=0.16)
+    for yp, lab, v in zip(ypos, labels, vals):
+        # Nom au-dessus de la barre, aligné à gauche
+        cax.text(0, yp + 0.42, lab.upper(), va="bottom", ha="left", color=B.INK_SOFT,
+                 fontproperties=F["body_sb"], fontsize=14)
+        # Valeur au bout de la barre
+        cax.text(v + mx * 0.02, yp, B.fr(v), va="center", ha="left", color=B.INK,
+                 fontproperties=F["num"], fontsize=28)
+    cax.set_xlim(0, mx * 1.22)
+    cax.set_ylim(-0.7, len(vals) - 0.3)
     return fig
 
 
@@ -255,26 +268,26 @@ def _make_courbe(fig, ax, article, top):
     labels, vals = _series(article.get("chart_data"))
     if not vals:
         return _make_infographic(fig, ax, article, top)
-    cax = _content_axes(fig, top)
+    cax = _content_axes(fig, top, bottom=0.155)
     cax.set_facecolor(B.CREAM)
     xs = list(range(len(vals)))
-    cax.plot(xs, vals, color=B.INK, lw=3.2, zorder=3,
-             marker="o", ms=10, mfc=B.MUSTARD, mec=B.INK, mew=2.2)
-    cax.fill_between(xs, vals, min(vals + [0]), color=B.MUSTARD, alpha=0.22, zorder=1)
+    cax.plot(xs, vals, color=B.INK, lw=4.2, zorder=3,
+             marker="o", ms=14, mfc=B.MUSTARD, mec=B.INK, mew=2.6)
+    cax.fill_between(xs, vals, min(vals + [0]), color=B.MUSTARD, alpha=0.25, zorder=1)
     for sp in ("top", "right"):
         cax.spines[sp].set_visible(False)
     cax.spines["left"].set_color(B.INK_SOFT)
     cax.spines["bottom"].set_color(B.INK_SOFT)
     cax.set_xticks(xs)
-    cax.set_xticklabels([l.upper() for l in labels], color=B.INK, fontsize=11)
+    cax.set_xticklabels([l.upper() for l in labels], color=B.INK, fontsize=13)
     for lab in cax.get_xticklabels():
         lab.set_fontproperties(F["body_sb"])
-    cax.tick_params(axis="y", colors=B.MUTED, labelsize=9)
+    cax.tick_params(axis="y", colors=B.MUTED, labelsize=10)
     cax.grid(axis="y", color=B.MUTED, alpha=0.18)
     for x, v in zip(xs, vals):
-        cax.annotate(B.fr(v), (x, v), textcoords="offset points", xytext=(0, 14),
-                     ha="center", color=B.INK, fontproperties=F["num"], fontsize=14)
-    cax.margins(y=0.24)
+        cax.annotate(B.fr(v), (x, v), textcoords="offset points", xytext=(0, 18),
+                     ha="center", color=B.INK, fontproperties=F["num"], fontsize=22)
+    cax.margins(y=0.30)
     # plancher de l'axe juste sous le min pour éviter le vide
     lo = min(vals); hi = max(vals)
     pad = (hi - lo) * 0.25 or hi * 0.1 or 1
