@@ -1,0 +1,7 @@
+.env
+__pycache__/
+*.pyc
+*.pyo
+*.png
+test_*.png
+.DS_Store

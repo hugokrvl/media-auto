@@ -1,0 +1,79 @@
+"""
+Génère les textes de posts pour chaque réseau via Groq.
+Respecte les contraintes de chaque plateforme.
+"""
+
+import json
+import os
+from groq import Groq
+
+client = Groq(api_key=os.environ["GROQ_API_KEY"])
+
+SYSTEM_PROMPT = """Tu es un community manager expert en médias économiques et tech.
+Tu rédiges des posts viraux, informatifs et engageants pour les réseaux sociaux.
+Ton style : direct, factuel, accrocheur. Pas de phrases creuses.
+Tu réponds UNIQUEMENT en JSON valide, sans markdown."""
+
+POST_PROMPT = """Rédige 3 versions de post pour cet article :
+
+Article : {title}
+Source : {source}
+Catégorie : {category}
+Points clés : {key_data}
+Résumé : {summary}
+
+Contraintes :
+- Twitter/X : max 260 caractères, 2-3 hashtags pertinents, emoji autorisé
+- Instagram : 150-300 mots, storytelling, 8-12 hashtags thématiques, émojis
+- LinkedIn : 200-400 mots, ton professionnel-analytique, 3-5 hashtags, pas d'émoji excessif
+
+JSON attendu :
+{{
+  "twitter": "<texte>",
+  "instagram": "<texte>",
+  "linkedin": "<texte>"
+}}"""
+
+
+def generate_captions(article: dict) -> dict:
+    """Retourne les captions pour les 3 réseaux."""
+    prompt = POST_PROMPT.format(
+        title=article["title"],
+        source=article["source"],
+        category=article.get("category", ""),
+        key_data=", ".join(article.get("key_data", [])) or "Voir article",
+        summary=article.get("summary", "")[:400],
+    )
+
+    response = client.chat.completions.create(
+        model="llama-3.3-70b-versatile",
+        messages=[
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": prompt},
+        ],
+        temperature=0.7,
+        max_tokens=800,
+    )
+
+    raw = response.choices[0].message.content.strip()
+    captions = json.loads(raw)
+
+    # Sécurité longueur Twitter
+    if len(captions.get("twitter", "")) > 270:
+        captions["twitter"] = captions["twitter"][:267] + "..."
+
+    return captions
+
+
+if __name__ == "__main__":
+    test = {
+        "title": "OpenAI lève 40 milliards de dollars, valorisation à 300 milliards",
+        "source": "TechCrunch",
+        "category": "tech",
+        "key_data": ["40 Mds$ levés", "Valorisation 300 Mds$", "+150% en 1 an"],
+        "summary": "OpenAI a bouclé un tour de financement record...",
+    }
+    captions = generate_captions(test)
+    for network, text in captions.items():
+        print(f"\n── {network.upper()} ({len(text)} chars) ──")
+        print(text)

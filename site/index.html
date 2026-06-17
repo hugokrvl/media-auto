@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MediaAuto — Planning</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header>
+    <div class="logo">Media<span>Auto</span></div>
+    <nav>
+      <button class="nav-btn active" data-view="pending">En attente</button>
+      <button class="nav-btn" data-view="approved">Approuvés</button>
+      <button class="nav-btn" data-view="posted">Publiés</button>
+      <button class="nav-btn" data-view="history">Historique</button>
+    </nav>
+    <div class="filters">
+      <select id="filter-cat">
+        <option value="">Toutes catégories</option>
+        <option value="finance">Finance</option>
+        <option value="tech">Tech</option>
+        <option value="general">Général</option>
+        <option value="sport">Sport</option>
+      </select>
+      <select id="filter-network">
+        <option value="">Tous réseaux</option>
+        <option value="twitter">X / Twitter</option>
+        <option value="instagram">Instagram</option>
+        <option value="linkedin">LinkedIn</option>
+      </select>
+    </div>
+  </header>
+
+  <main>
+    <div id="stats-bar">
+      <div class="stat"><span id="count-pending">—</span><label>En attente</label></div>
+      <div class="stat"><span id="count-approved">—</span><label>Approuvés</label></div>
+      <div class="stat"><span id="count-posted">—</span><label>Publiés</label></div>
+    </div>
+
+    <div id="posts-grid"></div>
+    <div id="empty-state" style="display:none">
+      <p>Aucun post trouvé.</p>
+    </div>
+    <div id="loading">Chargement…</div>
+  </main>
+
+  <!-- Modal prévisualisation -->
+  <div id="modal" class="modal" style="display:none">
+    <div class="modal-inner">
+      <button class="modal-close" onclick="closeModal()">✕</button>
+      <div id="modal-content"></div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
