@@ -3,13 +3,21 @@ Point d'entrée du pipeline nocturne.
 Exécuté par GitHub Actions à 1h du matin.
 """
 
-import sys
+import re
+import unicodedata
 from scraper import fetch_articles
 from analyzer import analyze_articles
 from dataviz import generate_image
 from generator import generate_captions
 from storage import upload_image, save_post
 from notifier import notify_pipeline_done
+
+
+def _slugify(text: str) -> str:
+    """Transforme un titre en nom de fichier ASCII sûr pour Supabase Storage."""
+    text = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii")
+    text = re.sub(r"[^a-zA-Z0-9]+", "_", text).strip("_")
+    return text[:40].lower()
 
 
 def run():
@@ -33,9 +41,9 @@ def run():
         return
 
     # 3. Génération par article (max 7 posts/jour)
-    for article in selected[:7]:
+    for i, article in enumerate(selected[:7]):
         try:
-            title_slug = article["title"][:40].replace(" ", "_").replace("/", "-")
+            title_slug = _slugify(article["title"]) or f"post_{i}"
 
             # Dataviz pour chaque réseau
             image_urls = {}
