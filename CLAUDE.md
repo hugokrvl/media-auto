@@ -187,6 +187,22 @@ python main.py
 
 Éditer `pipeline/analyzer.py` — changer le seuil dans `keep` (actuellement score >= 6).
 
-## Modifier l'identité visuelle
+## Identité visuelle (charte HK Média)
 
-Éditer `pipeline/dataviz.py` — les constantes `BG`, `YELLOW`, `WHITE` en haut du fichier.
+Direction artistique : **"Data punch" éditorial** · serif fort · jaune moutarde + crème.
+
+- **Charte centralisée** : `pipeline/brand.py` (couleurs, polices, helpers `fr()`, `variations()`).
+  - Couleurs : crème `#F5EDDA`, moutarde `#E2A50F`, encre `#1C1A15`.
+  - Polices custom (licence OFL, bundlées dans `pipeline/_fonts/`) :
+    - Titres → **DM Serif Display** (serif éditorial haut contraste)
+    - Gros chiffres → **Anton** (condensé massif, le "punch")
+    - Labels/texte → **Barlow** (Regular/Medium/SemiBold)
+  - `brand.ensure_fonts()` charge les polices ; elles sont commitées donc pas de
+    téléchargement nécessaire à l'exécution (fallback DejaVu si absentes).
+- **Moteur de rendu** : `pipeline/dataviz.py`.
+  - Chrome commun : cadre encadré, tag catégorie, **monogramme HK** (haut droite), footer source.
+  - 5 types : `kpi`, `donut`, `bar`, `courbe`, `infographic` (fallback).
+  - Formats par réseau : Instagram 1080² · Twitter 1200×675 · LinkedIn 1200×627.
+
+Pour changer une couleur : éditer `pipeline/brand.py`. Pour tester le rendu :
+`cd pipeline && python dataviz.py` (génère `test_*.png`).
