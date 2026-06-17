@@ -91,9 +91,11 @@ def fr(x, dec=None):
     sign = "-" if v < 0 else ""
     a = abs(v)
     if a >= 1e9:
-        return sign + f"{a/1e9:.1f} Md".replace(".", ",")
+        txt = f"{a/1e9:.1f}".rstrip("0").rstrip(".")
+        return sign + txt.replace(".", ",") + " Md"
     if a >= 1e6:
-        return sign + f"{a/1e6:.1f} M".replace(".", ",")
+        txt = f"{a/1e6:.1f}".rstrip("0").rstrip(".")
+        return sign + txt.replace(".", ",") + " M"
     if a >= 1e4:
         return sign + f"{a:,.0f}".replace(",", " ")
     if dec is None:

@@ -16,10 +16,13 @@ from matplotlib.patches import FancyBboxPatch, Rectangle, Circle
 
 import brand as B
 
+# Format carré 1080x1080 universel (Instagram feed, X, LinkedIn).
+# Robuste et cohérent sur les 3 réseaux. Variantes portrait/paysage : à ajouter
+# avec des layouts dédiés (le donut/légende doivent être repositionnés en paysage).
 SIZES = {
     "instagram": (1080, 1080),
-    "twitter": (1200, 675),
-    "linkedin": (1200, 627),
+    "twitter": (1080, 1080),
+    "linkedin": (1080, 1080),
 }
 
 
@@ -170,7 +173,11 @@ def _make_kpi(fig, ax, article, top):
     n = len(data)
     gap = 0.028
     x0, x1 = 0.075, 0.925
-    cw = (x1 - x0 - gap * (n - 1)) / n
+    if n == 1:
+        cw = 0.48
+        x0 = (1 - cw) / 2
+    else:
+        cw = (x1 - x0 - gap * (n - 1)) / n
     # Cartes XXL : on remplit toute la zone data disponible
     avail = top - 0.155
     ch = min(avail, cw * asp * 1.25)
