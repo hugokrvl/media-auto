@@ -5,8 +5,6 @@ Retourne un score de pertinence, vérifie les infos, trie et sélectionne les me
 
 import json
 import os
-import re
-import traceback
 from groq import Groq
 
 client = Groq(api_key=os.environ["GROQ_API_KEY"])
@@ -41,9 +39,9 @@ chart_type guide :
 - infographic : article narratif sans données structurées (fallback)
 
 Article :
-Titre: {title}
-Source: {source}
-Résumé: {summary}"""
+Titre: __TITLE__
+Source: __SOURCE__
+Résumé: __SUMMARY__"""
 
 
 def analyze_articles(articles: list[dict], max_to_analyze: int = 60) -> list[dict]:
@@ -60,8 +58,6 @@ def analyze_articles(articles: list[dict], max_to_analyze: int = 60) -> list[dic
                 results.append(article)
         except Exception as e:
             print(f"[ANALYZER] Erreur sur '{article['title'][:50]}': {type(e).__name__}: {e}")
-            traceback.print_exc()
-            break  # Stop après la première erreur pour voir le vrai problème
 
     # Trie par score décroissant, garde max 15 articles
     results.sort(key=lambda x: x.get("score", 0), reverse=True)
@@ -71,11 +67,10 @@ def analyze_articles(articles: list[dict], max_to_analyze: int = 60) -> list[dic
 
 
 def _analyze_one(article: dict) -> dict:
-    prompt = ANALYSIS_PROMPT.format(
-        title=article["title"],
-        source=article["source"],
-        summary=article["summary"][:600],
-    )
+    prompt = (ANALYSIS_PROMPT
+              .replace("__TITLE__", article["title"])
+              .replace("__SOURCE__", article["source"])
+              .replace("__SUMMARY__", article["summary"][:600]))
 
     response = client.chat.completions.create(
         model="llama-3.3-70b-versatile",
@@ -85,15 +80,10 @@ def _analyze_one(article: dict) -> dict:
         ],
         temperature=0.2,
         max_tokens=400,
+        response_format={"type": "json_object"},
     )
 
     raw = response.choices[0].message.content.strip()
-    print(f"[DEBUG] Réponse Groq brute : {repr(raw[:200])}")
-
-    # Extraction robuste du JSON
-    match = re.search(r'\{.*\}', raw, re.DOTALL)
-    if match:
-        return json.loads(match.group())
     return json.loads(raw)
 
 
