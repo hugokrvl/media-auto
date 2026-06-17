@@ -220,31 +220,39 @@ def _make_donut(fig, ax, article, top):
     labels, vals = _series(article.get("chart_data"))
     if not vals or sum(vals) == 0:
         return _make_infographic(fig, ax, article, top)
-    # Bande légende réservée en bas (2 lignes possibles) -> le donut occupe le reste
-    n_rows = (len(labels) + 2) // 3
-    legend_top = 0.20 + (n_rows - 1) * 0.045
-    chart_bottom = legend_top + 0.06
-    cax = fig.add_axes([0.18, chart_bottom, 0.64, max(0.28, top - chart_bottom - 0.02)])
-    cax.set_facecolor(B.CREAM)
     cols = B.variations(B.MUSTARD, len(vals))
     total = sum(vals)
+
+    # Légende ancrée juste au-dessus du footer -> on libère un MAX de hauteur au donut
+    n_rows = (len(labels) + 2) // 3
+    legend_bottom = 0.15
+    legend_top = legend_bottom + (n_rows - 1) * 0.045
+    chart_bottom = legend_top + 0.04
+    chart_top = top + 0.01
+    h = max(0.36, chart_top - chart_bottom)
+    # Boîte carrée centrée => grand anneau qui respire
+    figW, figH = fig.get_size_inches()
+    w = h * (figH / figW)
+    x0 = (1 - w) / 2
+    cax = fig.add_axes([x0, chart_bottom, w, h])
+    cax.set_facecolor(B.CREAM)
 
     def autop(p):
         return f"{p:.0f}%" if p >= 4 else ""
 
     wedges, _t, autotxt = cax.pie(
         vals, colors=cols, startangle=90, counterclock=False,
-        autopct=autop, pctdistance=0.80,
-        wedgeprops=dict(width=0.40, edgecolor=B.CREAM, linewidth=4),
-        textprops=dict(fontproperties=F["num"], fontsize=17))
+        autopct=autop, pctdistance=0.80, radius=1.0,
+        wedgeprops=dict(width=0.38, edgecolor=B.CREAM, linewidth=4.5),
+        textprops=dict(fontproperties=F["num"], fontsize=19))
     for t, c in zip(autotxt, cols):
         t.set_color(B.INK if B.lum(c) > 0.58 else B.CREAM)
     cax.set(aspect="equal")
     # Gros total central
     cax.text(0, 0.10, B.fr(total), ha="center", va="center", color=B.INK,
-             fontproperties=F["num"], fontsize=48)
+             fontproperties=F["num"], fontsize=54)
     cax.text(0, -0.20, "TOTAL", ha="center", va="center", color=B.MUTED,
-             fontproperties=F["body_sb"], fontsize=12)
+             fontproperties=F["body_sb"], fontsize=13)
     # Légende manuelle (sans chevauchement)
     _draw_legend(ax, fig, labels, cols, y=legend_top)
     return fig
