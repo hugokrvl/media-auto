@@ -62,28 +62,18 @@ def _draw_tag(ax, fig, category):
 
 
 def _draw_monogram(fig):
-    """Monogramme HK 'hyper design' en haut à droite : disque moutarde,
-    double anneau encre, HK serif + filet séparateur."""
+    """Monogramme HK épuré en haut à droite : disque moutarde + 'HK' serif."""
     F = fig._hk_fonts
     figW, figH = fig.get_size_inches()
-    w = 0.115
+    w = 0.10
     h = w * (figW / figH)
-    bax = fig.add_axes([0.825, 0.875 - h + 0.05, w, h])
+    bax = fig.add_axes([0.83, 0.905 - h, w, h])
     bax.set_xlim(0, 1); bax.set_ylim(0, 1); bax.set_aspect("equal"); bax.axis("off")
     bax.set_zorder(6)
-    # Disque moutarde + anneau encre
-    bax.add_patch(Circle((0.5, 0.5), 0.5, facecolor=B.MUSTARD, edgecolor=B.INK, linewidth=3, zorder=6))
-    bax.add_patch(Circle((0.5, 0.5), 0.40, facecolor="none", edgecolor=B.INK, linewidth=1.0, zorder=7))
-    # HK serif
-    bax.text(0.355, 0.46, "H", ha="center", va="center", color=B.INK,
-             fontproperties=F["title"], fontsize=27, zorder=8)
-    bax.text(0.645, 0.46, "K", ha="center", va="center", color=B.INK,
-             fontproperties=F["title"], fontsize=27, zorder=8)
-    # Filet séparateur vertical
-    bax.plot([0.5, 0.5], [0.30, 0.70], color=B.INK, linewidth=1.1, zorder=8)
-    # Micro-texte d'arc en bas
-    bax.text(0.5, 0.135, "MÉDIA", ha="center", va="center", color=B.INK,
-             fontproperties=F["body_sb"], fontsize=6.5, zorder=8)
+    bax.add_patch(Circle((0.5, 0.5), 0.5, facecolor=B.MUSTARD, edgecolor=B.INK,
+                  linewidth=2.5, zorder=6))
+    bax.text(0.5, 0.47, "HK", ha="center", va="center", color=B.INK,
+             fontproperties=F["title"], fontsize=30, zorder=7)
 
 
 def _draw_header(fig, ax, title, subtitle):
@@ -118,6 +108,29 @@ def _draw_footer(fig, ax, source):
             color=B.INK_SOFT, fontproperties=F["body_md"], fontsize=10.5, zorder=5)
     ax.text(0.925, 0.07, "@HK.MÉDIA", ha="right", va="center",
             color=B.INK, fontproperties=F["body_sb"], fontsize=10.5, zorder=5)
+
+
+def _draw_legend(ax, fig, labels, cols, y):
+    """Légende manuelle centrée (pastille + label), max 3 par ligne.
+    Placée dans une bande dédiée pour éviter tout chevauchement."""
+    F = fig._hk_fonts
+    asp = fig.get_size_inches()[0] / fig.get_size_inches()[1]
+    per_row = min(3, len(labels))
+    cellw = 0.255
+    sq = 0.020
+    rows = [labels[i:i + per_row] for i in range(0, len(labels), per_row)]
+    rows_c = [cols[i:i + per_row] for i in range(0, len(cols), per_row)]
+    for ri, (rlabels, rcols) in enumerate(zip(rows, rows_c)):
+        total_w = len(rlabels) * cellw
+        x0 = (1 - total_w) / 2
+        yy = y - ri * 0.045
+        for ci, (lab, col) in enumerate(zip(rlabels, rcols)):
+            cx = x0 + ci * cellw
+            ax.add_patch(FancyBboxPatch((cx, yy - sq * asp / 2), sq, sq * asp,
+                         boxstyle="round,pad=0,rounding_size=0.004", mutation_aspect=asp,
+                         facecolor=col, edgecolor=B.INK, linewidth=0.8, zorder=5))
+            ax.text(cx + sq + 0.012, yy, str(lab)[:16], ha="left", va="center",
+                    color=B.INK, fontproperties=F["body_md"], fontsize=12, zorder=5)
 
 
 def _finish(fig):
@@ -200,8 +213,11 @@ def _make_donut(fig, ax, article, top):
     labels, vals = _series(article.get("chart_data"))
     if not vals or sum(vals) == 0:
         return _make_infographic(fig, ax, article, top)
-    # Donut plus grand : on lui donne quasi toute la zone data
-    cax = fig.add_axes([0.12, 0.20, 0.76, max(0.3, top - 0.21)])
+    # Bande légende réservée en bas (2 lignes possibles) -> le donut occupe le reste
+    n_rows = (len(labels) + 2) // 3
+    legend_top = 0.20 + (n_rows - 1) * 0.045
+    chart_bottom = legend_top + 0.06
+    cax = fig.add_axes([0.18, chart_bottom, 0.64, max(0.28, top - chart_bottom - 0.02)])
     cax.set_facecolor(B.CREAM)
     cols = B.variations(B.MUSTARD, len(vals))
     total = sum(vals)
@@ -211,23 +227,19 @@ def _make_donut(fig, ax, article, top):
 
     wedges, _t, autotxt = cax.pie(
         vals, colors=cols, startangle=90, counterclock=False,
-        autopct=autop, pctdistance=0.80, radius=1.18,
-        wedgeprops=dict(width=0.42, edgecolor=B.CREAM, linewidth=4),
-        textprops=dict(fontproperties=F["num"], fontsize=18))
+        autopct=autop, pctdistance=0.80,
+        wedgeprops=dict(width=0.40, edgecolor=B.CREAM, linewidth=4),
+        textprops=dict(fontproperties=F["num"], fontsize=17))
     for t, c in zip(autotxt, cols):
         t.set_color(B.INK if B.lum(c) > 0.58 else B.CREAM)
     cax.set(aspect="equal")
     # Gros total central
-    cax.text(0, 0.12, B.fr(total), ha="center", va="center", color=B.INK,
-             fontproperties=F["num"], fontsize=52)
-    cax.text(0, -0.22, "TOTAL", ha="center", va="center", color=B.MUTED,
-             fontproperties=F["body_sb"], fontsize=13)
-    leg = cax.legend(wedges, labels, loc="lower center", bbox_to_anchor=(0.5, -0.20),
-                     ncol=min(3, len(labels)), frameon=False, fontsize=13,
-                     handlelength=1.1, columnspacing=1.4)
-    for txt in leg.get_texts():
-        txt.set_color(B.INK)
-        txt.set_fontproperties(F["body_sb"])
+    cax.text(0, 0.10, B.fr(total), ha="center", va="center", color=B.INK,
+             fontproperties=F["num"], fontsize=48)
+    cax.text(0, -0.20, "TOTAL", ha="center", va="center", color=B.MUTED,
+             fontproperties=F["body_sb"], fontsize=12)
+    # Légende manuelle (sans chevauchement)
+    _draw_legend(ax, fig, labels, cols, y=legend_top)
     return fig
 
 
