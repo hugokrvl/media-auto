@@ -13,7 +13,7 @@ def notify(title: str, message: str, priority: str = "default") -> None:
 
     try:
         requests.post(url, data=message.encode("utf-8"), headers={
-            "Title": title,
+            "Title": title.encode("utf-8"),
             "Priority": priority,
             "Tags": "newspaper,robot",
         }, timeout=10)

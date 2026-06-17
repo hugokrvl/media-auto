@@ -84,6 +84,20 @@ def _analyze_one(article: dict) -> dict:
     )
 
     raw = response.choices[0].message.content.strip()
+
+    # Extraire le JSON si enveloppé dans un bloc markdown
+    if "```" in raw:
+        raw = raw.split("```")[1]
+        if raw.startswith("json"):
+            raw = raw[4:]
+        raw = raw.strip()
+
+    # Ajouter les accolades si le modèle les a oubliées
+    if raw and not raw.startswith("{"):
+        raw = "{" + raw
+    if raw and not raw.endswith("}"):
+        raw = raw + "}"
+
     return json.loads(raw)
 
 
