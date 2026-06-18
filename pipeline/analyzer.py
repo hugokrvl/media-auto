@@ -196,7 +196,7 @@ def _enrich_one(article: dict, summary_override: str = None) -> dict:
                   .replace("__SUMMARY__", summary_override[:1600]))
     else:
         prompt = _fill(ENRICH_PROMPT, article, 600)
-    return _chat(GENERATION_MODEL, ENRICH_SYSTEM, prompt, max_tokens=700)
+    return _chat(GENERATION_MODEL, ENRICH_SYSTEM, prompt, max_tokens=500)
 
 
 def enrich_with_transcript(article: dict) -> dict:

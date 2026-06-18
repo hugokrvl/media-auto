@@ -140,10 +140,11 @@ Analyser 60 articles/nuit avec le 70b ≈ **~96-107k tokens/jour** → dépasser
 |-------|--------|------|
 | **1. Triage** des ~60 articles | `llama-3.1-8b-instant` | score / vérif / catégorie / garder-jeter (sortie minimale) |
 | **1bis. Digest vidéo** (si transcription) | `llama-3.1-8b-instant` (`GROQ_DIGEST_MODEL`) | compresse la transcription complète en résumé dense en données |
-| **2. Enrichissement** des ≤12 retenus | `llama-3.3-70b-versatile` | titre FR, sous-titre, type de graphique + données |
+| **2. Enrichissement** des ≤12 retenus | `llama-3.3-70b-versatile` | titre FR, sous-titre, type de graphique + données (max 500 tokens) |
+| **3. Captions** (X / Instagram / LinkedIn) | `llama-3.1-8b-instant` (`GROQ_CAPTION_MODEL`) | textes adaptés par réseau (max 600 tokens) |
 
-Les **captions** (`generator.py`) restent sur le 70b. Le gros volume passe ainsi sur
-le modèle à 500k tokens/jour, le 70b n'est sollicité que sur les posts retenus.
+Le 70b est réservé à l'enrichissement structuré uniquement — les captions basculent
+sur le 8b (500k/jour) pour économiser le quota. Consommation 70b estimée : ~12k/100k/jour.
 
 **Digest vidéo (map-reduce)** — une transcription d'1h ≈ 13k tokens, trop gros pour le
 70b (100k/jour). On la « digère » d'abord avec le modèle pas cher (500k/jour) : découpe

@@ -9,8 +9,9 @@ from groq import Groq
 
 client = Groq(api_key=os.environ["GROQ_API_KEY"])
 
-# Captions = qualité éditoriale -> modèle 70b (même réglage que analyzer.GENERATION_MODEL)
-GENERATION_MODEL = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")
+# Captions sur le 8b (500k tokens/jour) : qualité suffisante pour le social media,
+# économise le quota 70b (100k/jour) pour l'enrichissement structuré uniquement.
+GENERATION_MODEL = os.environ.get("GROQ_CAPTION_MODEL", "llama-3.1-8b-instant")
 
 SYSTEM_PROMPT = """Tu es un community manager expert en médias économiques et tech.
 Tu rédiges des posts viraux, informatifs et engageants pour les réseaux sociaux.
@@ -62,7 +63,7 @@ def generate_captions(article: dict) -> dict:
             {"role": "user", "content": prompt},
         ],
         temperature=0.7,
-        max_tokens=800,
+        max_tokens=600,
         response_format={"type": "json_object"},
     )
 
