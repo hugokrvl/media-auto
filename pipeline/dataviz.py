@@ -344,21 +344,33 @@ def _make_infographic(fig, ax, article, top):
     points = [p for p in points if str(p).strip()][:4]
     if not points:
         points = [article.get("subtitle_fr", "") or "Information du jour"]
+    # Hauteur de boîte : 1 ligne = 0.082, 2 lignes = 0.112
+    BOX_H1, BOX_H2 = 0.082, 0.112
+    GAP = 0.016
     y = top - 0.02
     for i, pt in enumerate(points):
         col = B.variations(B.MUSTARD, max(2, len(points)))[i % max(2, len(points))]
-        ax.add_patch(FancyBboxPatch((0.085, y - 0.085), 0.83, 0.078,
+        wrapped = textwrap.wrap(str(pt), 54)[:2]  # max 2 lignes
+        two_lines = len(wrapped) == 2
+        bh = BOX_H2 if two_lines else BOX_H1
+        mid = y - bh / 2  # centre vertical de la boîte
+        ax.add_patch(FancyBboxPatch((0.085, y - bh), 0.83, bh,
                      boxstyle="round,pad=0,rounding_size=0.018", mutation_aspect=asp,
                      facecolor=B.CREAM_2, edgecolor=B.INK, linewidth=1.4, zorder=2))
-        # Pastille numéro
-        ax.add_patch(Circle((0.125, y - 0.046), 0.022, facecolor=col, edgecolor=B.INK,
+        # Pastille numéro centrée verticalement
+        ax.add_patch(Circle((0.125, mid), 0.022, facecolor=col, edgecolor=B.INK,
                      linewidth=1.2, zorder=3))
-        ax.text(0.125, y - 0.046, str(i + 1), ha="center", va="center", color=B.INK,
+        ax.text(0.125, mid, str(i + 1), ha="center", va="center", color=B.INK,
                 fontproperties=F["num"], fontsize=15, zorder=4)
-        wrapped = textwrap.wrap(str(pt), 52)
-        ax.text(0.17, y - 0.046, wrapped[0] if wrapped else "", ha="left", va="center",
-                color=B.INK, fontproperties=F["body_md"], fontsize=13, zorder=4)
-        y -= 0.105
+        if two_lines:
+            ax.text(0.17, mid + 0.018, wrapped[0], ha="left", va="center",
+                    color=B.INK, fontproperties=F["body_md"], fontsize=13, zorder=4)
+            ax.text(0.17, mid - 0.018, wrapped[1], ha="left", va="center",
+                    color=B.INK, fontproperties=F["body_md"], fontsize=13, zorder=4)
+        else:
+            ax.text(0.17, mid, wrapped[0] if wrapped else "", ha="left", va="center",
+                    color=B.INK, fontproperties=F["body_md"], fontsize=13, zorder=4)
+        y -= bh + GAP
     return fig
 
 
