@@ -50,7 +50,12 @@ def run():
         print(f"[MAIN] Historique dédup indisponible ({e}) — tout en 'new'")
 
     # 3. Génération par article (max 7 posts/jour)
-    dups = updates = 0
+    # Prioriser les articles avec graphique (kpi/bar/donut/courbe) sur les infographics
+    _CHART_PRIORITY = {"kpi": 0, "bar": 1, "donut": 2, "courbe": 3, "line": 3, "infographic": 10}
+    selected.sort(key=lambda a: _CHART_PRIORITY.get(a.get("chart_type", "infographic"), 10))
+    MAX_INFOGRAPHIC = 2  # au plus 2 posts "liste de points" sur 7
+
+    dups = updates = infographic_count = 0
     for i, article in enumerate(selected):
         if saved >= 7:
             break
@@ -62,6 +67,13 @@ def run():
             dups += 1
             print(f"[MAIN] ⊘ Doublon ignoré : {article['title'][:55]}")
             continue
+
+        # Cap infographic : si déjà 2 listes de points ce soir, passer au suivant
+        if article.get("chart_type", "infographic") == "infographic":
+            if infographic_count >= MAX_INFOGRAPHIC:
+                print(f"[MAIN] ⊘ Trop d'infographics ({MAX_INFOGRAPHIC} max), ignoré : {article['title'][:50]}")
+                continue
+            infographic_count += 1
         if status == "update":
             updates += 1
             article["is_update"] = True

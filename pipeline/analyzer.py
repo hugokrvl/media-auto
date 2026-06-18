@@ -101,9 +101,17 @@ RÈGLES chart_data (données RÉELLES tirées de l'article) :
 - "donut"  : répartition/parts. [{"label":"Apple","value":28},{"label":"Samsung","value":22}]
 - "bar"    : comparaison/classement. [{"label":"OpenAI","value":40},{"label":"xAI","value":18}]
 - "courbe" : évolution temporelle. [{"label":"Jan","value":92},{"label":"Fév","value":88}]
-- "infographic" : pas de chiffres exploitables -> chart_data: [], remplis key_points.
+- "infographic" : DERNIER RECOURS SEULEMENT -> chart_data: [], remplis key_points.
 
-Si l'article ne contient pas de chiffres fiables, utilise "infographic".
+ORDRE DE PRIORITÉ POUR LE CHOIX DU TYPE (applique le premier qui est possible) :
+1. "kpi"     → s'il y a AU MOINS 1 chiffre clé (montant, %, taux, score, rang…)
+2. "bar"     → s'il y a 2+ valeurs comparables (pays, entreprises, produits…)
+3. "donut"   → s'il y a une répartition en parts dont le total est 100 % ou proche
+4. "courbe"  → s'il y a une série temporelle (mois, trimestres, années…)
+5. "infographic" → UNIQUEMENT si l'article est 100 % qualitatif, sans aucun chiffre ni donnée chiffrable
+
+Cherche activement des chiffres même implicites : classements, dates, durées, effectifs, budgets.
+"infographic" ne doit représenter qu'une minorité des posts.
 
 Article :
 Titre: __TITLE__
