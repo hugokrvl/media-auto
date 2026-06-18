@@ -114,26 +114,35 @@ def _draw_footer(fig, ax, source):
 
 
 def _draw_legend(ax, fig, labels, cols, y):
-    """Légende manuelle centrée (pastille + label), max 3 par ligne.
-    Placée dans une bande dédiée pour éviter tout chevauchement."""
+    """Légende sur colonnes x fixes — alignement parfait quelle que soit la ligne.
+    ≤3 items : 1 ligne. 4 items : 1 ligne de 4. 5-6 items : 2 lignes de 3."""
     F = fig._hk_fonts
     asp = fig.get_size_inches()[0] / fig.get_size_inches()[1]
-    per_row = min(3, len(labels))
-    cellw = 0.255
-    sq = 0.020
-    rows = [labels[i:i + per_row] for i in range(0, len(labels), per_row)]
-    rows_c = [cols[i:i + per_row] for i in range(0, len(cols), per_row)]
-    for ri, (rlabels, rcols) in enumerate(zip(rows, rows_c)):
-        total_w = len(rlabels) * cellw
-        x0 = (1 - total_w) / 2
-        yy = y - ri * 0.045
-        for ci, (lab, col) in enumerate(zip(rlabels, rcols)):
-            cx = x0 + ci * cellw
-            ax.add_patch(FancyBboxPatch((cx, yy - sq * asp / 2), sq, sq * asp,
-                         boxstyle="round,pad=0,rounding_size=0.004", mutation_aspect=asp,
-                         facecolor=col, edgecolor=B.INK, linewidth=0.8, zorder=5))
-            ax.text(cx + sq + 0.012, yy, str(lab)[:16], ha="left", va="center",
-                    color=B.INK, fontproperties=F["body_md"], fontsize=12, zorder=5)
+    sq = 0.018
+    row_h = 0.040
+    n = len(labels)
+    # Positions x fixes par colonne (ne changent jamais — c'est ce qui aligne)
+    if n <= 2:
+        ncols = n
+        col_xs = [0.22, 0.60][:n]
+    elif n == 3:
+        ncols, col_xs = 3, [0.10, 0.385, 0.665]
+    elif n == 4:
+        ncols, col_xs = 4, [0.055, 0.295, 0.545, 0.780]
+    elif n == 5:
+        ncols, col_xs = 3, [0.10, 0.385, 0.665]
+    else:
+        ncols, col_xs = 3, [0.10, 0.385, 0.665]
+    for i, (lab, col) in enumerate(zip(labels, cols)):
+        ri = i // ncols
+        ci = i % ncols
+        cx = col_xs[ci]
+        yy = y - ri * row_h
+        ax.add_patch(FancyBboxPatch((cx, yy - sq * asp / 2), sq, sq * asp,
+                     boxstyle="round,pad=0,rounding_size=0.004", mutation_aspect=asp,
+                     facecolor=col, edgecolor=B.INK, linewidth=0.8, zorder=5))
+        ax.text(cx + sq + 0.009, yy, str(lab)[:14].upper(), ha="left", va="center",
+                color=B.INK, fontproperties=F["body_md"], fontsize=11.5, zorder=5)
 
 
 def _finish(fig):
@@ -223,13 +232,16 @@ def _make_donut(fig, ax, article, top):
     cols = B.variations(B.MUSTARD, len(vals))
     total = sum(vals)
 
-    # Légende ancrée juste au-dessus du footer -> on libère un MAX de hauteur au donut
-    n_rows = (len(labels) + 2) // 3
-    legend_bottom = 0.15
-    legend_top = legend_bottom + (n_rows - 1) * 0.045
-    chart_bottom = legend_top + 0.04
-    chart_top = top + 0.01
-    h = max(0.36, chart_top - chart_bottom)
+    # Légende — 1 ligne pour ≤4 items, 2 lignes pour 5-6 : max de place pour le donut
+    n = len(labels)
+    ncols_leg = 4 if n == 4 else (n if n <= 3 else 3)
+    n_rows = (n + ncols_leg - 1) // ncols_leg
+    legend_bottom = 0.125
+    row_h_leg = 0.040
+    legend_top = legend_bottom + n_rows * row_h_leg
+    chart_bottom = legend_top + 0.028
+    chart_top = top + 0.015
+    h = max(0.40, chart_top - chart_bottom)
     # Boîte carrée centrée => grand anneau qui respire
     figW, figH = fig.get_size_inches()
     w = h * (figH / figW)
@@ -238,22 +250,22 @@ def _make_donut(fig, ax, article, top):
     cax.set_facecolor(B.CREAM)
 
     def autop(p):
-        return f"{p:.0f}%" if p >= 4 else ""
+        return f"{p:.0f}%" if p >= 5 else ""
 
     wedges, _t, autotxt = cax.pie(
         vals, colors=cols, startangle=90, counterclock=False,
-        autopct=autop, pctdistance=0.80, radius=1.0,
+        autopct=autop, pctdistance=0.79, radius=1.0,
         wedgeprops=dict(width=0.38, edgecolor=B.CREAM, linewidth=4.5),
-        textprops=dict(fontproperties=F["num"], fontsize=19))
+        textprops=dict(fontproperties=F["num"], fontsize=21))
     for t, c in zip(autotxt, cols):
         t.set_color(B.INK if B.lum(c) > 0.58 else B.CREAM)
     cax.set(aspect="equal")
     # Gros total central
     cax.text(0, 0.10, B.fr(total), ha="center", va="center", color=B.INK,
-             fontproperties=F["num"], fontsize=54)
-    cax.text(0, -0.20, "TOTAL", ha="center", va="center", color=B.MUTED,
-             fontproperties=F["body_sb"], fontsize=13)
-    # Légende manuelle (sans chevauchement)
+             fontproperties=F["num"], fontsize=62)
+    cax.text(0, -0.24, "TOTAL", ha="center", va="center", color=B.MUTED,
+             fontproperties=F["body_sb"], fontsize=14)
+    # Légende alignée sur colonnes fixes
     _draw_legend(ax, fig, labels, cols, y=legend_top)
     return fig
 

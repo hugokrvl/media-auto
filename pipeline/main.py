@@ -5,11 +5,12 @@ Exécuté par GitHub Actions à 1h du matin.
 
 import re
 import unicodedata
+import dedup
 from scraper import fetch_articles
 from analyzer import analyze_articles
 from dataviz import generate_image
 from generator import generate_captions
-from storage import upload_image, save_post
+from storage import upload_image, save_post, get_recent_history
 from notifier import notify_pipeline_done
 
 
@@ -40,8 +41,40 @@ def run():
         print("[MAIN] Aucun article retenu après analyse.")
         return
 
+    # 2bis. Dédup intelligent — charge l'historique récent (résilient si indispo)
+    try:
+        history = get_recent_history(days=14)
+        print(f"[MAIN] Historique dédup : {len(history)} posts des 14 derniers jours")
+    except Exception as e:
+        history = []
+        print(f"[MAIN] Historique dédup indisponible ({e}) — tout en 'new'")
+
     # 3. Génération par article (max 7 posts/jour)
-    for i, article in enumerate(selected[:7]):
+    dups = updates = 0
+    for i, article in enumerate(selected):
+        if saved >= 7:
+            break
+
+        # Verdict dédup (compare à l'historique + aux posts déjà retenus cette nuit)
+        dedup.annotate(article)
+        status, matched = dedup.classify(article, history)
+        if status == "duplicate":
+            dups += 1
+            print(f"[MAIN] ⊘ Doublon ignoré : {article['title'][:55]}")
+            continue
+        if status == "update":
+            updates += 1
+            article["is_update"] = True
+            article["update_of"] = (matched or {}).get("id")
+            sub = article.get("subtitle_fr", "")
+            article["subtitle_fr"] = ("MISE À JOUR · " + sub)[:50] if sub else "MISE À JOUR"
+            print(f"[MAIN] ↻ Mise à jour détectée : {article['title'][:50]}")
+
+        # Vidéo dont la transcription a échoué -> post créé quand même (depuis la
+        # description) mais FLAGUÉ : l'utilisateur pourra coller le script sur le site.
+        article["needs_transcript"] = bool(
+            article.get("is_video") and not article.get("transcript"))
+
         try:
             title_slug = _slugify(article["title"]) or f"post_{i}"
 
@@ -59,11 +92,16 @@ def run():
             # Sauvegarde
             save_post(article, captions, image_urls)
             saved += 1
-            print(f"[MAIN] ✓ Post créé : {article['title'][:60]}")
+            # Empile dans l'historique du run -> les articles suivants se dédupliquent aussi
+            history.append(dedup.as_history_row(article))
+            tag = " [MAJ]" if article.get("is_update") else ""
+            print(f"[MAIN] ✓ Post créé{tag} : {article['title'][:60]}")
 
         except Exception as e:
             errors += 1
             print(f"[MAIN] ✗ Erreur sur '{article['title'][:50]}': {e}")
+
+    print(f"[MAIN] Dédup : {dups} doublon(s) ignoré(s), {updates} mise(s) à jour")
 
     # 4. Notification
     notify_pipeline_done(saved, errors)

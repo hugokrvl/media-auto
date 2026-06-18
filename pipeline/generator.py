@@ -9,6 +9,9 @@ from groq import Groq
 
 client = Groq(api_key=os.environ["GROQ_API_KEY"])
 
+# Captions = qualité éditoriale -> modèle 70b (même réglage que analyzer.GENERATION_MODEL)
+GENERATION_MODEL = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")
+
 SYSTEM_PROMPT = """Tu es un community manager expert en médias économiques et tech.
 Tu rédiges des posts viraux, informatifs et engageants pour les réseaux sociaux.
 Tu écris TOUJOURS en FRANÇAIS, même si l'article source est en anglais.
@@ -53,7 +56,7 @@ def generate_captions(article: dict) -> dict:
     )
 
     response = client.chat.completions.create(
-        model="llama-3.3-70b-versatile",
+        model=GENERATION_MODEL,
         messages=[
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": prompt},

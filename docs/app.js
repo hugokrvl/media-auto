@@ -69,10 +69,13 @@ function renderPosts() {
 
   let posts = allPosts;
 
-  // Filtre par vue
+  // Filtre par vue ("pending" regroupe aussi les transcriptions manquantes / en cours)
   if (currentView !== "history") {
-    const statusMap = { pending: "pending", approved: "approved", posted: "posted" };
-    posts = posts.filter(p => p.status === statusMap[currentView]);
+    if (currentView === "pending") {
+      posts = posts.filter(p => ["pending", "needs_transcript", "to_regenerate"].includes(p.status));
+    } else {
+      posts = posts.filter(p => p.status === currentView);
+    }
   }
 
   // Filtres supplémentaires
@@ -107,6 +110,7 @@ function makeCard(post) {
     <div class="card-body">
       <div class="card-meta">
         <span class="badge ${catClass}">${post.category || "—"}</span>
+        ${post.is_update ? `<span class="badge badge-update" title="Sujet déjà traité, mais un chiffre/fait a changé">↻ Mise à jour</span>` : ""}
         <span class="badge badge-score ${scoreClass}">${post.relevance_score}/10</span>
         ${post.status !== "pending" ? `<span class="status-badge status-${post.status}">${statusLabel(post.status)}</span>` : ""}
       </div>
@@ -114,7 +118,10 @@ function makeCard(post) {
       <p class="card-source">📰 ${esc(post.source)}</p>
       <p class="card-caption">${esc((post[captionKey] || "").substring(0, 200))}</p>
 
-      ${post.status === "pending" ? `
+      ${post.status === "to_regenerate" ? `
+        <div class="regen-pending">⏳ Génération en cours… (≤ 15 min, ou « Run workflow » sur GitHub)</div>
+      ` : (post.status === "pending" || post.status === "needs_transcript") ? `
+        ${post.status === "needs_transcript" ? transcriptBox(post) : ""}
         <div class="network-select" data-post="${post.id}">
           <button class="net-btn ${defaultNet === "instagram" ? "selected" : ""}" data-net="instagram" onclick="selectNet(this)">Instagram</button>
           <button class="net-btn ${defaultNet === "twitter" ? "selected" : ""}" data-net="twitter" onclick="selectNet(this)">X / Twitter</button>
@@ -136,7 +143,42 @@ function makeCard(post) {
 }
 
 function statusLabel(s) {
-  return { pending: "⏳ En attente", approved: "✅ Approuvé", posted: "📤 Publié" }[s] || s;
+  return {
+    pending: "⏳ En attente", approved: "✅ Approuvé", posted: "📤 Publié",
+    needs_transcript: "📝 Transcription manquante", to_regenerate: "⏳ Génération…",
+  }[s] || s;
+}
+
+// Zone de collage de la transcription (vidéo YouTube sans script auto)
+function transcriptBox(post) {
+  return `
+    <div class="transcript-box">
+      <p class="tb-label">📝 Transcription manquante — colle le script YouTube pour un post de meilleure qualité (sinon « Approuver » garde la version description).</p>
+      ${post.article_url ? `<a class="tb-link" href="${esc(post.article_url)}" target="_blank" rel="noopener">▶ Ouvrir la vidéo sur YouTube</a>` : ""}
+      <textarea class="tb-input" id="tb-${post.id}" placeholder="Colle ici la transcription copiée depuis YouTube…"></textarea>
+      <button class="btn-generate" onclick="submitTranscript('${post.id}', this)">⚙️ Générer le post</button>
+    </div>`;
+}
+
+async function submitTranscript(postId, btn) {
+  const ta = document.getElementById("tb-" + postId);
+  const text = (ta && ta.value || "").trim();
+  if (text.length < 50) {
+    alert("Colle d'abord la transcription (au moins quelques phrases).");
+    return;
+  }
+  btn.disabled = true;
+  btn.textContent = "Envoi…";
+  try {
+    await supabaseUpdate(postId, { pending_transcript: text, status: "to_regenerate" });
+    const post = allPosts.find(p => p.id === postId);
+    if (post) { post.status = "to_regenerate"; post.pending_transcript = text; }
+    renderPosts();
+  } catch (err) {
+    btn.disabled = false;
+    btn.textContent = "⚙️ Générer le post";
+    alert("Erreur : " + err.message);
+  }
 }
 
 function esc(str) {
