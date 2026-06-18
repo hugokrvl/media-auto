@@ -146,6 +146,12 @@ Analyser 60 articles/nuit avec le 70b ≈ **~96-107k tokens/jour** → dépasser
 Le 70b est réservé à l'enrichissement structuré uniquement — les captions basculent
 sur le 8b (500k/jour) pour économiser le quota. Consommation 70b estimée : ~12k/100k/jour.
 
+> ⚠️ **TODO — qualité captions** : les captions sont actuellement sur `llama-3.1-8b-instant`
+> pour économiser le quota 70b (on avait dépassé 100k/jour en testant plusieurs runs le même jour).
+> En production normale (1 run/nuit), la conso 70b serait ~12k → quota largement suffisant.
+> **Repasser `GROQ_CAPTION_MODEL` sur `llama-3.3-70b-versatile`** dans `generator.py` dès que
+> la qualité des captions 8b semble insuffisante, ou si le quota n'est jamais atteint en pratique.
+
 **Digest vidéo (map-reduce)** — une transcription d'1h ≈ 13k tokens, trop gros pour le
 70b (100k/jour). On la « digère » d'abord avec le modèle pas cher (500k/jour) : découpe
 en morceaux → extraction des seules DONNÉES (chiffres, %, montants, dates) → résumé
