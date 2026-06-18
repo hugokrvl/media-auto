@@ -12,6 +12,8 @@ from dataviz import generate_image
 from generator import generate_captions
 from storage import upload_image, save_post, get_recent_history
 from notifier import notify_pipeline_done
+import image_fetch
+import breaking as breaking_renderer
 
 
 def _slugify(text: str) -> str:
@@ -115,9 +117,48 @@ def run():
 
     print(f"[MAIN] Dédup : {dups} doublon(s) ignoré(s), {updates} mise(s) à jour")
 
-    # 4. Notification
-    notify_pipeline_done(saved, errors)
-    print(f"=== Pipeline terminé : {saved} posts / {errors} erreurs ===")
+    # 4. Posts "Breaking News" (photo libre de droits + overlay titre)
+    # Déclenchés pour les articles score >= 9 + verified, max 2/nuit
+    _breaking_candidates = [
+        a for a in selected
+        if a.get("score", 0) >= 9 and a.get("verified") and not a.get("_breaking_done")
+    ][:2]
+
+    breaking_saved = 0
+    if _breaking_candidates and image_fetch.PEXELS_API_KEY:
+        print(f"[MAIN] Breaking news : {len(_breaking_candidates)} candidat(s)")
+        for article in _breaking_candidates:
+            try:
+                photo_url = image_fetch.fetch_photo_url(article)
+                if not photo_url:
+                    print(f"[MAIN] Breaking : pas de photo pour «{article['title'][:45]}»")
+                    continue
+                photo_bytes = image_fetch.download_image(photo_url)
+                if not photo_bytes:
+                    continue
+                img_bytes = breaking_renderer.make_breaking_image(article, photo_bytes)
+                title_slug = _slugify(article.get("title_fr") or article["title"]) or "breaking"
+                image_urls = {}
+                for network in ["instagram", "twitter", "linkedin"]:
+                    url = upload_image(img_bytes, f"{title_slug}_breaking_{network}.png")
+                    image_urls[network] = url
+                captions = generate_captions(article)
+                # Marque le type comme breaking pour le site
+                article_br = {**article, "chart_type": "breaking"}
+                save_post(article_br, captions, image_urls)
+                breaking_saved += 1
+                print(f"[MAIN] ✓ Breaking créé : {article['title'][:60]}")
+            except Exception as e:
+                errors += 1
+                print(f"[MAIN] ✗ Breaking KO «{article['title'][:45]}»: {e}")
+    elif _breaking_candidates and not image_fetch.PEXELS_API_KEY:
+        print("[MAIN] Breaking news : PEXELS_API_KEY absent, posts photo ignorés")
+
+    total_saved = saved + breaking_saved
+
+    # 5. Notification
+    notify_pipeline_done(total_saved, errors)
+    print(f"=== Pipeline terminé : {total_saved} posts ({saved} dataviz + {breaking_saved} breaking) / {errors} erreurs ===")
 
 
 if __name__ == "__main__":
