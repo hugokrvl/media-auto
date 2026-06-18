@@ -283,10 +283,16 @@ Direction artistique : **« Data punch » éditorial** · serif fort · jaune mo
     à l'exécution ; fallback DejaVu si absentes).
 - **Moteur de rendu** : `pipeline/dataviz.py`.
   - Chrome commun : cadre encadré, tag catégorie, **monogramme HK** (haut droite), footer source.
-  - 5 types : `kpi`, `donut`, `bar`, `courbe`, `infographic` (fallback).
-  - **Actu sans chiffres** : type `infographic` (titre + 2-4 points clés, sans graphique).
-    Le triage ne pénalise PAS l'absence de données — l'impact prime, la dataviz est un
-    bonus (voir prompt `TRIAGE_PROMPT` dans `analyzer.py`).
+  - 5 types : `kpi`, `donut`, `bar`, `courbe`, `infographic` (dernier recours).
+  - **Ordre de priorité du choix de type** (dans `ENRICH_PROMPT`) :
+    1. `kpi` → au moins 1 chiffre clé (montant, %, taux, rang…)
+    2. `bar` → 2+ valeurs comparables (pays, entreprises, produits…)
+    3. `donut` → répartition en parts (~100 %)
+    4. `courbe` → série temporelle (mois, trimestres, années…)
+    5. `infographic` → **dernier recours**, article 100 % qualitatif sans aucun chiffre
+  - **Diversité garantie** (`main.py`) : les articles avec graphique sont triés en tête ;
+    maximum **2 infographics sur 7 posts** par nuit (`MAX_INFOGRAPHIC=2`).
+  - Texte des key_points affiché sur **jusqu'à 2 lignes** (boîtes à hauteur adaptative).
   - Format **carré 1080×1080** universel (3 réseaux). Portrait/paysage = layouts dédiés (plus tard).
 - Tester le rendu : `python dataviz.py` (→ `test_*.png`). Planche-contact : `python gallery.py`.
 
