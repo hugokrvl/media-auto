@@ -121,7 +121,7 @@ def run():
     # Déclenchés pour les articles score >= 9 + verified, max 2/nuit
     _breaking_candidates = [
         a for a in selected
-        if a.get("score", 0) >= 9 and a.get("verified") and not a.get("_breaking_done")
+        if a.get("score", 0) >= 8 and a.get("verified") and not a.get("_breaking_done")
     ][:2]
 
     breaking_saved = 0

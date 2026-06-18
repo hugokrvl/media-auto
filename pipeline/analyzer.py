@@ -43,19 +43,24 @@ TRIAGE_SYSTEM = """Tu es rédacteur en chef d'un média économique sérieux, or
 Tu juges vite si un article mérite d'être relayé sur les réseaux. Réponds UNIQUEMENT
 en JSON valide, sans markdown ni commentaire."""
 
-TRIAGE_PROMPT = """Évalue cet article pour un post réseaux sociaux.
+TRIAGE_PROMPT = """Évalue cet article pour un compte média français (finance, tech, actu, sport).
 
-Critères PRIORITAIRES (ce qui décide de garder ou non) :
-- impact économique/sociétal réel (l'info compte-t-elle vraiment pour les gens ?)
-- fiabilité de la source et caractère vérifiable
+Critères PRIORITAIRES pour garder (score ≥ 6) :
+- impact économique ou sociétal réel, pertinent pour un public français
+- info vérifiable, fiable, issue d'une source reconnue
+- actualité nationale ou internationale significative
 
-Critère BONUS (ne fait que monter un peu le score, JAMAIS baisser) :
+À REJETER impérativement (score ≤ 4, keep=false) :
+- promotionnel : offres, réductions, codes promo, abonnements ("-X% off", "deal", "discount")
+- faits divers locaux sans portée nationale (accidents, arrestations isolées)
+- people/lifestyle sans enjeu (célébrités, rumeurs)
+- contenu hors sujet pour un public francophone (actualité hyperlocale US/UK sans impact global)
+
+Critère BONUS (monte un peu le score, jamais baisser) :
 - potentiel de visualisation de données (chiffres, comparaisons, tendances)
 
-IMPORTANT : une actualité forte et fiable SANS aucun chiffre reste pertinente —
-elle deviendra une infographie « titre + points clés ». Ne la pénalise PAS pour
-l'absence de données chiffrées. Ne jette que ce qui est anecdotique, non vérifié,
-promotionnel ou sans intérêt réel.
+IMPORTANT : une actualité forte et fiable SANS chiffres reste pertinente (→ infographie).
+Ne jette que ce qui est anecdotique, promotionnel, non vérifié ou sans intérêt réel.
 
 Réponds en JSON EXACTEMENT ainsi :
 {
