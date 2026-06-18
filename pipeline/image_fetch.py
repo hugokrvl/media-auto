@@ -12,8 +12,10 @@ import urllib.request
 import urllib.parse
 import json
 
-PEXELS_API_KEY = os.environ.get("PEXELS_API_KEY", "")
-PEXELS_SEARCH  = "https://api.pexels.com/v1/search"
+PEXELS_API_KEY    = os.environ.get("PEXELS_API_KEY", "")
+PEXELS_SEARCH     = "https://api.pexels.com/v1/search"
+UNSPLASH_ACCESS_KEY = os.environ.get("UNSPLASH_ACCESS_KEY", "")
+UNSPLASH_SEARCH   = "https://api.unsplash.com/search/photos"
 
 # Mots inutiles pour la recherche (stopwords FR + EN)
 _STOP = {
@@ -57,17 +59,41 @@ def _keywords(article: dict) -> str:
     return " ".join(words[:5])
 
 
-def fetch_photo_url(article: dict, orientation: str = "square") -> str | None:
-    """Cherche une photo Pexels pertinente. Retourne l'URL directe ou None."""
-    if not PEXELS_API_KEY:
-        return None
-    query = _keywords(article)
-    if not query:
+def _fetch_unsplash(query: str) -> str | None:
+    """Recherche Unsplash (prioritaire — licence libre commerciale)."""
+    if not UNSPLASH_ACCESS_KEY:
         return None
     params = urllib.parse.urlencode({
         "query": query,
         "per_page": 5,
-        "orientation": orientation,
+        "orientation": "squarish",
+        "content_filter": "high",
+    })
+    req = urllib.request.Request(
+        f"{UNSPLASH_SEARCH}?{params}",
+        headers={"Authorization": f"Client-ID {UNSPLASH_ACCESS_KEY}"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=10) as r:
+            data = json.loads(r.read())
+        results = data.get("results", [])
+        if not results:
+            return None
+        urls = results[0].get("urls", {})
+        return urls.get("regular") or urls.get("full")
+    except Exception as e:
+        print(f"[UNSPLASH] Erreur ({query!r}): {type(e).__name__}: {e}")
+        return None
+
+
+def _fetch_pexels(query: str) -> str | None:
+    """Recherche Pexels (fallback)."""
+    if not PEXELS_API_KEY:
+        return None
+    params = urllib.parse.urlencode({
+        "query": query,
+        "per_page": 5,
+        "orientation": "square",
     })
     req = urllib.request.Request(
         f"{PEXELS_SEARCH}?{params}",
@@ -79,12 +105,22 @@ def fetch_photo_url(article: dict, orientation: str = "square") -> str | None:
         photos = data.get("photos", [])
         if not photos:
             return None
-        # Prend la première photo, taille "large2x" (2x1080)
         src = photos[0].get("src", {})
         return src.get("large2x") or src.get("large") or src.get("original")
     except Exception as e:
-        print(f"[PEXELS] Erreur recherche ({query!r}): {type(e).__name__}: {e}")
+        print(f"[PEXELS] Erreur ({query!r}): {type(e).__name__}: {e}")
         return None
+
+
+def fetch_photo_url(article: dict, orientation: str = "square") -> str | None:
+    """Cherche une photo libre de droits (Unsplash en priorité, Pexels en fallback)."""
+    query = _keywords(article)
+    if not query:
+        return None
+    url = _fetch_unsplash(query) or _fetch_pexels(query)
+    if not url:
+        print(f"[IMAGE] Aucune photo trouvée pour : {query!r}")
+    return url
 
 
 def download_image(url: str) -> bytes | None:

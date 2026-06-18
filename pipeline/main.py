@@ -125,7 +125,7 @@ def run():
     ][:2]
 
     breaking_saved = 0
-    if _breaking_candidates and image_fetch.PEXELS_API_KEY:
+    if _breaking_candidates and (image_fetch.UNSPLASH_ACCESS_KEY or image_fetch.PEXELS_API_KEY):
         print(f"[MAIN] Breaking news : {len(_breaking_candidates)} candidat(s)")
         for article in _breaking_candidates:
             try:
@@ -151,8 +151,8 @@ def run():
             except Exception as e:
                 errors += 1
                 print(f"[MAIN] ✗ Breaking KO «{article['title'][:45]}»: {e}")
-    elif _breaking_candidates and not image_fetch.PEXELS_API_KEY:
-        print("[MAIN] Breaking news : PEXELS_API_KEY absent, posts photo ignorés")
+    elif _breaking_candidates and not (image_fetch.UNSPLASH_ACCESS_KEY or image_fetch.PEXELS_API_KEY):
+        print("[MAIN] Breaking news : UNSPLASH_ACCESS_KEY et PEXELS_API_KEY absents, posts photo ignorés")
 
     total_saved = saved + breaking_saved
 
