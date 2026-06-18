@@ -1,9 +1,11 @@
 """
-Récupération d'images libres de droits via l'API Pexels.
+Récupération d'images libres de droits pour les posts Breaking News.
 
-Utilisé pour les posts "breaking news" : photo pertinente + overlay titre.
-Nécessite la variable d'environnement PEXELS_API_KEY (clé gratuite sur pexels.com).
-Sans clé → retourne None (pipeline non bloqué).
+Ordre de priorité :
+1. Wikimedia Commons  — sans clé, photos éditoriales réelles (chefs d'État, villes,
+                        événements) sous licence libre (CC-BY-SA / domaine public)
+2. Unsplash           — clé UNSPLASH_ACCESS_KEY, photos créatives haute qualité
+3. Pexels             — clé PEXELS_API_KEY, fallback final
 """
 
 import os
@@ -97,6 +99,97 @@ def _keywords(article: dict) -> str:
     return query
 
 
+_WIKIMEDIA_API = "https://commons.wikimedia.org/w/api.php"
+# Extensions photo acceptées (exclut SVG, diagrammes, icônes)
+_PHOTO_EXT = {".jpg", ".jpeg", ".png", ".webp"}
+# Mots à éviter dans les noms de fichiers Wikimedia (cartes, drapeaux, logos…)
+_WIKI_SKIP = {"map", "flag", "logo", "icon", "diagram", "chart", "coat",
+              "arms", "seal", "emblem", "banner", "template", "svg",
+              "screenshot", "screen", "aufmacher", "capture", "scherm",
+              "example", "sample", "interface", "demo", "chatgpt", "openai",
+              "wikipedia", "wikimedia", "commons"}
+
+
+def _fetch_wikimedia(query: str) -> str | None:
+    """
+    Cherche une photo sur Wikimedia Commons (sans clé API).
+    Retourne une URL d'image redimensionnée à 1080px ou None.
+    Idéal pour les personnalités politiques, villes, événements historiques.
+    """
+    # Étape 1 : recherche de fichiers correspondant à la requête
+    search_params = urllib.parse.urlencode({
+        "action": "query",
+        "list": "search",
+        "srsearch": query,
+        "srnamespace": "6",   # namespace File
+        "srlimit": "20",
+        "format": "json",
+    })
+    req = urllib.request.Request(
+        f"{_WIKIMEDIA_API}?{search_params}",
+        headers={"User-Agent": "HKMedia/1.0 (mediaauto; hugo1actualite@gmail.com)"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=10) as r:
+            data = json.loads(r.read())
+        results = data.get("query", {}).get("search", [])
+        if not results:
+            return None
+
+        # Filtrer : garder seulement les vraies photos (pas SVG, maps, logos)
+        candidates = []
+        for item in results:
+            title = item.get("title", "")
+            tl = title.lower()
+            ext = next((e for e in _PHOTO_EXT if tl.endswith(e)), None)
+            if not ext:
+                continue
+            if any(skip in tl for skip in _WIKI_SKIP):
+                continue
+            candidates.append(title)
+            if len(candidates) >= 5:
+                break
+
+        if not candidates:
+            return None
+
+        # Étape 2 : récupérer l'URL de miniature (1080px) du meilleur candidat
+        titles_param = "|".join(candidates[:3])
+        info_params = urllib.parse.urlencode({
+            "action": "query",
+            "titles": titles_param,
+            "prop": "imageinfo",
+            "iiprop": "url|mime|size",
+            "iiurlwidth": "1080",
+            "format": "json",
+        })
+        req2 = urllib.request.Request(
+            f"{_WIKIMEDIA_API}?{info_params}",
+            headers={"User-Agent": "HKMedia/1.0 (mediaauto; hugo1actualite@gmail.com)"},
+        )
+        with urllib.request.urlopen(req2, timeout=10) as r:
+            info = json.loads(r.read())
+
+        pages = info.get("query", {}).get("pages", {}).values()
+        for page in pages:
+            ii = page.get("imageinfo", [{}])[0]
+            mime = ii.get("mime", "")
+            if not mime.startswith("image/") or mime == "image/svg+xml":
+                continue
+            w = ii.get("width", 0)
+            if w < 400:   # trop petite
+                continue
+            url = ii.get("thumburl") or ii.get("url")
+            if url:
+                print(f"[WIKIMEDIA] Photo trouvée : {page.get('title','')[:60]}")
+                return url
+
+        return None
+    except Exception as e:
+        print(f"[WIKIMEDIA] Erreur ({query!r}): {type(e).__name__}: {e}")
+        return None
+
+
 def _fetch_unsplash(query: str) -> str | None:
     """Recherche Unsplash (prioritaire — licence libre commerciale)."""
     if not UNSPLASH_ACCESS_KEY:
@@ -150,12 +243,62 @@ def _fetch_pexels(query: str) -> str | None:
         return None
 
 
+def _wikimedia_cascade(article: dict) -> str | None:
+    """
+    Essaie plusieurs requêtes Wikimedia de plus en plus larges.
+    On cherche d'abord les noms propres (personnes, lieux, marques),
+    puis on élargit vers le sujet général.
+    """
+    title = (article.get("title_fr") or article.get("title", "")).lower()
+    import unicodedata
+
+    # Entités nommées détectées dans le titre (mots à initiale majuscule d'origine)
+    title_orig = (article.get("title_fr") or article.get("title", ""))
+    proper = [w for w in re.findall(r'\b[A-ZÀ-Ÿ][a-zà-ÿA-ZÀ-Ÿ]{2,}\b', title_orig)
+              if w.lower() not in _STOP and len(w) > 2]
+
+    # Construire une liste de requêtes candidates (du plus spécifique au plus large)
+    queries = []
+
+    # 1. Noms propres les plus importants (ex: "Putin Moscow", "Decathlon", "OpenAI")
+    if len(proper) >= 2:
+        queries.append(" ".join(proper[:2]))
+    if proper:
+        queries.append(proper[0])
+
+    # 2. Requête complète traduite
+    full_query = _keywords(article)
+    if full_query not in queries:
+        queries.append(full_query)
+
+    # 3. Mots-clés raccourcis (2 premiers mots significatifs)
+    short = " ".join(full_query.split()[:2])
+    if short and short not in queries:
+        queries.append(short)
+
+    for q in queries:
+        if not q or len(q) < 3:
+            continue
+        url = _fetch_wikimedia(q)
+        if url:
+            return url
+    return None
+
+
 def fetch_photo_url(article: dict, orientation: str = "square") -> str | None:
-    """Cherche une photo libre de droits (Unsplash en priorité, Pexels en fallback)."""
+    """
+    Cherche une photo libre de droits.
+    Priorité : Wikimedia (cascade noms propres → sujet) → Unsplash → Pexels.
+    """
     query = _keywords(article)
-    if not query:
-        return None
-    url = _fetch_unsplash(query) or _fetch_pexels(query)
+
+    # Wikimedia : cascade de requêtes du plus spécifique au plus large
+    url = _wikimedia_cascade(article)
+
+    # Fallback créatif : Unsplash puis Pexels
+    if not url:
+        url = _fetch_unsplash(query) or _fetch_pexels(query)
+
     if not url:
         print(f"[IMAGE] Aucune photo trouvée pour : {query!r}")
     return url
