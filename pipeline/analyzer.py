@@ -32,10 +32,12 @@ DIGEST_MODEL = os.environ.get("GROQ_DIGEST_MODEL", "llama-3.1-8b-instant")
 
 # Volumes & cadence (surchargeables par env)
 MAX_ANALYZE = int(os.environ.get("GROQ_MAX_ANALYZE", "60"))   # triés en passe 1
-MAX_ENRICH = int(os.environ.get("GROQ_MAX_ENRICH", "12"))     # enrichis en passe 2
+MAX_ENRICH = int(os.environ.get("GROQ_MAX_ENRICH", "10"))     # enrichis en passe 2 (70b, 12k TPM)
 MAX_DIGEST = int(os.environ.get("GROQ_MAX_DIGEST", "5"))      # vidéos digérées/nuit
 DIGEST_CHARS = int(os.environ.get("GROQ_DIGEST_CHARS", "14000"))  # taille d'un morceau
-PACE_SECONDS = float(os.environ.get("GROQ_PACE_SECONDS", "2.2"))  # respecte RPM/TPM
+# Pacing entre appels : 8b tolère 2s, 70b nécessite ≥7s (12 000 TPM / ~1 300 tok/appel)
+PACE_SECONDS        = float(os.environ.get("GROQ_PACE_SECONDS", "2.2"))   # triage 8b
+PACE_SECONDS_ENRICH = float(os.environ.get("GROQ_PACE_ENRICH",  "7.0"))   # enrichissement 70b
 SCORE_KEEP = int(os.environ.get("GROQ_SCORE_KEEP", "6"))      # seuil de rétention
 
 # ── Prompts ───────────────────────────────────────────────────────────────────
@@ -126,7 +128,7 @@ Résumé: __SUMMARY__"""
 
 # ── Appel Groq robuste (back-off sur rate-limit) ──────────────────────────────
 def _chat(model: str, system: str, user: str, max_tokens: int, retries: int = 4) -> dict:
-    delay = 5.0
+    delay = 15.0  # backoff initial plus généreux (5→15s) pour le 70b à 12k TPM
     for attempt in range(retries):
         try:
             resp = client.chat.completions.create(
@@ -275,7 +277,7 @@ def analyze_articles(articles: list[dict], max_to_analyze: int = None) -> list[d
             article.setdefault("chart_data", [])
             article.setdefault("key_points", [])
             enriched.append(article)
-        time.sleep(PACE_SECONDS)
+        time.sleep(PACE_SECONDS_ENRICH)  # 70b : 7s min pour rester sous 12k TPM
 
     print(f"[ANALYZER] {len(enriched)} articles prêts (triage {TRIAGE_MODEL} → "
           f"génération {GENERATION_MODEL})")
