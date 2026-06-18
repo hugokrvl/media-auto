@@ -150,11 +150,9 @@ def make_breaking_image(article: dict, photo_bytes: bytes) -> bytes:
     draw = ImageDraw.Draw(photo, "RGBA")
 
     # ── Polices ────────────────────────────────────────────────────────────────
-    f_badge    = _pil_font("Barlow-SemiBold.ttf", 26)
-    f_title    = _pil_font("Anton-Regular.ttf", 88)       # ALL CAPS, chiffres normaux
-    f_title_hi = _pil_font("Anton-Regular.ttf", 88)       # même taille, couleur jaune
-    f_footer   = _pil_font("Barlow-SemiBold.ttf", 26)
-    f_hk       = _pil_font("Anton-Regular.ttf", 36)
+    f_badge  = _pil_font("Barlow-SemiBold.ttf", 26)
+    f_footer = _pil_font("Barlow-SemiBold.ttf", 26)
+    f_hk     = _pil_font("Anton-Regular.ttf", 36)
 
     # ── Cadre jaune HK ─────────────────────────────────────────────────────────
     brd = 16
@@ -180,21 +178,30 @@ def make_breaking_image(article: dict, photo_bytes: bytes) -> bytes:
               "HK", font=f_hk, fill=_BLACK)
 
     # ── Titre ALL CAPS + surlignage jaune des chiffres ─────────────────────────
-    title_raw = (article.get("title_fr") or article.get("title", "")).upper()
-    # Wrap à ~18 chars (Anton est très large)
-    lines_raw = textwrap.wrap(title_raw, width=18)[:4]
-
-    # Calcul de la hauteur totale du bloc titre
-    line_h = 96  # interligne Anton 88px
-    total_title_h = len(lines_raw) * line_h
-    # Zone titre : au-dessus du footer (100px), sous le centre (40%)
-    title_bottom = SIZE - 110
-    title_top = title_bottom - total_title_h
+    # Max 80 chars : breaking = court et percutant. On coupe au dernier mot entier.
+    title_full = (article.get("title_fr") or article.get("title", ""))
+    if len(title_full) > 80:
+        title_full = title_full[:78].rsplit(" ", 1)[0] + "…"
+    title_raw = title_full.upper()
     margin_left = 48
+    title_bottom = SIZE - 110
+    available_h = title_bottom - int(SIZE * 0.40)  # zone disponible (~60% bas)
+
+    # Taille de police adaptative : commence à 88, réduit si trop de lignes
+    for font_size, wrap_w in [(88, 18), (76, 20), (64, 23), (54, 26)]:
+        lines_raw = textwrap.wrap(title_raw, width=wrap_w)
+        line_h = int(font_size * 1.08)
+        if len(lines_raw) * line_h <= available_h:
+            break  # ça rentre
+
+    f_title    = _pil_font("Anton-Regular.ttf", font_size)
+    f_title_hi = _pil_font("Anton-Regular.ttf", font_size)
+
+    total_title_h = len(lines_raw) * line_h
+    title_top = title_bottom - total_title_h
 
     for i, line in enumerate(lines_raw):
         segs = _split_segments(line)
-        lw = _line_width(segs, f_title, f_title_hi)
         y = title_top + i * line_h
         _draw_multicolor_line(draw, segs, margin_left, y, f_title, f_title_hi)
 

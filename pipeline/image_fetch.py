@@ -26,37 +26,75 @@ _STOP = {
     "its", "by", "from", "that", "this", "as", "be", "was", "were",
 }
 
-# Traductions simples FR→EN pour de meilleurs résultats Pexels
+# Traductions FR→EN (longues en premier pour éviter les remplacements partiels)
 _TRANSLATE = {
-    "bourse": "stock market", "marché": "market", "économie": "economy",
-    "finance": "finance", "banque": "bank", "taux": "interest rate",
-    "inflation": "inflation", "croissance": "growth", "récession": "recession",
-    "entreprise": "company", "intelligence artificielle": "artificial intelligence",
-    "technologie": "technology", "crypto": "cryptocurrency", "bitcoin": "bitcoin",
-    "politique": "politics", "président": "president", "gouvernement": "government",
-    "élection": "election", "guerre": "war", "conflit": "conflict",
-    "sport": "sport", "football": "football", "tennis": "tennis",
-    "santé": "health", "énergie": "energy", "climat": "climate",
-    "emploi": "employment", "chômage": "unemployment",
+    # Finance
+    "intelligence artificielle": "artificial intelligence",
+    "taux d'intérêt": "interest rate", "taux directeur": "key interest rate",
+    "bourse": "stock market", "marché financier": "financial market",
+    "banque centrale": "central bank", "réserve fédérale": "federal reserve",
+    "inflation": "inflation", "récession": "recession", "croissance": "economic growth",
+    "chômage": "unemployment", "emploi": "employment",
+    "cryptomonnaie": "cryptocurrency", "bitcoin": "bitcoin",
+    "entreprise": "business", "marché": "market", "banque": "bank",
+    "économie": "economy", "finance": "finance", "taux": "interest rate",
+    # Actualité / politique
+    "guerre": "war", "conflit armé": "armed conflict", "conflit": "conflict",
+    "attaque": "attack", "drone": "drone", "missile": "missile",
+    "ukraine": "ukraine", "russie": "russia", "moscou": "moscow",
+    "élection": "election", "président": "president", "gouvernement": "government",
+    "politique": "politics", "parlement": "parliament",
+    # Météo / environnement
+    "canicule": "heatwave", "vague de chaleur": "heat wave", "chaleur": "heat",
+    "inondation": "flood", "incendie": "wildfire", "tempête": "storm",
+    "sécheresse": "drought", "climat": "climate", "environnement": "environment",
+    "énergie": "energy", "nucléaire": "nuclear",
+    # Tech
+    "technologie": "technology", "intelligence": "artificial intelligence",
+    "robot": "robot", "données": "data",
+    # Sport
+    "football": "football", "tennis": "tennis", "cyclisme": "cycling",
+    "sport": "sport", "coupe du monde": "world cup", "jeux olympiques": "olympic games",
+    # Santé
+    "santé": "health", "hôpital": "hospital", "médecin": "doctor",
+    "épidémie": "epidemic", "vaccin": "vaccine",
+}
+
+# Mots-clés de contexte par catégorie (REMPLACE "news" trop générique)
+_CAT_CONTEXT = {
+    "finance":   "finance economy",
+    "tech":      "technology digital",
+    "sport":     "sport athlete",
+    "general":   "",          # pas d'ancrage générique → on laisse les mots du titre
+    "factcheck": "journalism media",
 }
 
 
 def _keywords(article: dict) -> str:
-    """Extrait 3-5 mots-clés EN pour la recherche Pexels."""
+    """Extrait 3-5 mots-clés EN pour la recherche d'image."""
     raw = (article.get("title_fr") or article.get("title", "")).lower()
-    # Traductions longues d'abord
+    # Normalise les accents pour la correspondance
+    import unicodedata
+    raw_norm = unicodedata.normalize("NFKD", raw).encode("ascii", "ignore").decode()
+
+    # Appliquer les traductions (longues d'abord)
     for fr, en in sorted(_TRANSLATE.items(), key=lambda x: -len(x[0])):
-        raw = raw.replace(fr, en)
-    # Nettoyer ponctuation
-    raw = re.sub(r"[^\w\s]", " ", raw)
-    words = [w for w in raw.split() if len(w) > 3 and w not in _STOP]
-    # Ajouter la catégorie pour ancrer le contexte
-    cat_map = {"finance": "economy", "tech": "technology",
-               "sport": "sports", "general": "news", "factcheck": "journalism"}
-    cat = cat_map.get(article.get("category", ""), "")
-    if cat and cat not in words:
-        words.insert(0, cat)
-    return " ".join(words[:5])
+        fr_norm = unicodedata.normalize("NFKD", fr).encode("ascii", "ignore").decode()
+        raw_norm = raw_norm.replace(fr_norm, en)
+
+    # Nettoyer ponctuation + stopwords
+    raw_norm = re.sub(r"[^\w\s]", " ", raw_norm)
+    words = [w for w in raw_norm.split() if len(w) > 3 and w not in _STOP]
+
+    # Ajouter contexte catégorie si pertinent
+    cat = article.get("category", "")
+    ctx = _CAT_CONTEXT.get(cat, "")
+    if ctx:
+        words = ctx.split() + words
+
+    query = " ".join(words[:5])
+    print(f"[IMAGE] Requête photo : {query!r} (article: {(article.get('title_fr') or '')[:40]})")
+    return query
 
 
 def _fetch_unsplash(query: str) -> str | None:
