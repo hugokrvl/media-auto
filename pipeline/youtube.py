@@ -67,24 +67,29 @@ def video_id(entry) -> str | None:
     return m.group(1) if m else None
 
 
+def _snippet_text(s) -> str:
+    """Texte d'un segment de transcription (dict en API 0.x, objet .text en 1.x)."""
+    if isinstance(s, dict):
+        return s.get("text", "")
+    return getattr(s, "text", "")
+
+
 def get_transcript(vid: str, max_chars: int = 20000) -> str:
-    """Transcription auto (fr -> en -> n'importe laquelle). '' si indisponible.
-    Dépend de youtube-transcript-api (optionnel) ; absente -> repli silencieux."""
+    """Transcription auto (fr -> en). '' si indisponible. Compatible
+    youtube-transcript-api 0.x (classmethod) ET 1.x (instance). Repli silencieux."""
     try:
         from youtube_transcript_api import YouTubeTranscriptApi
     except Exception:
         return ""  # lib non installée -> on s'appuiera sur la description
     try:
-        try:
+        if hasattr(YouTubeTranscriptApi, "get_transcript"):
+            # API 0.x
             chunks = YouTubeTranscriptApi.get_transcript(vid, languages=["fr", "en"])
-        except Exception:
-            # Repli : n'importe quelle langue disponible (souvent auto-générée)
-            listing = YouTubeTranscriptApi.list_transcripts(vid)
-            tr = next(iter(listing), None)
-            chunks = tr.fetch() if tr else []
-        text = " ".join(c.get("text", "") for c in chunks if c.get("text"))
-        text = re.sub(r"\s+", " ", text).strip()
-        return text[:max_chars]
+        else:
+            # API 1.x : instance + fetch()
+            chunks = YouTubeTranscriptApi().fetch(vid, languages=["fr", "en"])
+        text = " ".join(_snippet_text(c) for c in chunks if _snippet_text(c))
+        return re.sub(r"\s+", " ", text).strip()[:max_chars]
     except Exception as e:
         print(f"[YOUTUBE] Transcription indispo ({vid}): {type(e).__name__}")
         return ""

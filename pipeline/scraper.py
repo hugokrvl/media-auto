@@ -3,6 +3,7 @@ Scrape les sources et retourne les articles des dernières 24h.
 Trois types de sources (voir sources.py) : rss, youtube, email.
 """
 
+import os
 import re
 import time
 import feedparser
@@ -12,26 +13,47 @@ import youtube
 from sources import SOURCES
 from email_sources import fetch_newsletters
 
+# Plafond d'articles gardés PAR source (les flux Google News renvoient jusqu'à 100).
+# Évite qu'une source noie les autres dans les 60 analysés par l'analyzer.
+MAX_PER_SOURCE = int(os.environ.get("SCRAPER_MAX_PER_SOURCE", "12"))
+
 
 def fetch_articles(hours_back: int = 24) -> list[dict]:
-    """Retourne tous les articles publiés dans les dernières `hours_back` heures."""
+    """Articles des dernières `hours_back` h, ENTRELACÉS (round-robin) entre sources
+    pour que les 60 premiers analysés couvrent toutes les catégories."""
     cutoff = datetime.now(timezone.utc) - timedelta(hours=hours_back)
-    articles = []
+    per_source = []  # une liste d'articles par source (plafonnée)
 
     for source in SOURCES:
         stype = source.get("type", "rss")
         try:
             if stype == "email":
-                articles += fetch_newsletters(hours_back, source.get("category", "general"))
+                items = fetch_newsletters(hours_back, source.get("category", "general"))
             elif stype == "youtube":
-                articles += _fetch_youtube(source, cutoff)
+                items = _fetch_youtube(source, cutoff)
             else:
-                articles += _fetch_rss(source, cutoff)
+                items = _fetch_rss(source, cutoff)
+            if items:
+                per_source.append(items[:MAX_PER_SOURCE])
             time.sleep(0.3)  # respecte les serveurs
         except Exception as e:
             print(f"[SCRAPER] Erreur sur {source['name']}: {e}")
 
-    print(f"[SCRAPER] {len(articles)} articles récupérés ({hours_back}h)")
+    # Entrelacement round-robin : 1er de chaque source, puis 2e de chaque, etc.
+    articles = []
+    depth = 0
+    while True:
+        added = False
+        for items in per_source:
+            if depth < len(items):
+                articles.append(items[depth])
+                added = True
+        if not added:
+            break
+        depth += 1
+
+    print(f"[SCRAPER] {len(articles)} articles récupérés ({hours_back}h, "
+          f"{len(per_source)} sources, max {MAX_PER_SOURCE}/source)")
     return articles
 
 

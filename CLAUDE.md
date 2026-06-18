@@ -183,16 +183,27 @@ Chaque source porte un champ `type` (défaut `"rss"`) :
 ```bash
 cd pipeline && python validate_sources.py   # teste chaque flux en réel (RSS + YouTube)
 ```
-Les sources à 0 entrée / en erreur sont à corriger ou retirer. Certaines URLs RSS
-sont des « meilleures hypothèses » (commentaire `# ? à valider` dans le fichier).
+**État validé : 30/30 sources OK.** Beaucoup de médias FR (Reuters, Les Échos,
+Boursorama, RMC…) n'ont plus de flux RSS natif fonctionnel → on passe par
+**Google News** via le helper `_gn("site:domaine.fr when:1d")` (articles récents du
+domaine, fiable, toujours à jour ; les URLs d'articles sont alors des liens
+news.google.com, sans impact sur l'analyse — le nom du média affiché reste le vrai).
+Flux natifs conservés là où ils marchent (CoinDesk, FT, WSJ, BBC, Le Monde, 01net,
+L'Équipe via `dwh.lequipe.fr`, Le Parisien, Ouest-France, Numerama, The Verge…).
+
+**Équilibrage (`scraper.py`)** : certains flux renvoient 100 articles. Pour éviter
+qu'une source noie les autres dans les 60 analysés, le scraper **plafonne à
+`SCRAPER_MAX_PER_SOURCE` (12) articles/source** puis **entrelace** les sources en
+round-robin → les 60 premiers couvrent toutes les catégories.
 
 ### 5.1 YouTube (`youtube.py`)
 - Le flux RSS YouTube exige un `channel_id` (UC…) : `resolve_feed()` le déduit en
   lisant la page de la chaîne (`@handle`, `/c/Nom`, `/channel/UC…`), avec cache.
   **Testé OK** sur Chéron, Baccino, Stefani, Hasheur.
-- **Transcription** (`youtube-transcript-api`) : ⚠️ souvent **bloquée depuis GitHub
-  Actions** (YouTube bannit les IP datacenter). → repli automatique sur le **titre +
-  description** de la vidéo (toujours dans le flux RSS, fiable à 100 %).
+- **Transcription** (`youtube-transcript-api`) : code compatible API **0.x et 1.x**
+  (`get_transcript` classmethod OU instance `.fetch()`). ⚠️ souvent **bloquée depuis
+  GitHub Actions** (YouTube bannit les IP datacenter) → repli automatique sur le
+  **titre + description** (toujours dans le flux RSS). Marche mieux en local (IP résidentielle).
 - **Exploitation des données vidéo** : quand la transcription est disponible, elle est
   gardée *complète* (`article["transcript"]`, jusqu'à 20 000 car.) et, si la vidéo passe
   le triage, **digérée** par le modèle pas cher pour en extraire toutes les données
@@ -431,7 +442,7 @@ python reprocess.py            # retraite les transcriptions collées (file Supa
 4. [x] Secrets GitHub : Groq + Supabase + ntfy
 5. [x] Boîte newsletters Gmail + 2FA + mot de passe d'application → secrets
 6. [x] **Architecture 2 modèles** (8b triage / 70b génération) — voir §4
-7. [ ] `validate_sources.py` après pull → nettoyer les flux morts
+7. [x] `validate_sources.py` → **30/30 sources OK** (flux morts remplacés par Google News)
 8. [ ] Premier vrai run (`workflow_dispatch`) → vérifier quotas Groq
 9. [ ] `docs/app.js` creds Supabase + activer GitHub Pages sur `/docs`
 10. [ ] Réseaux sociaux X / Instagram / LinkedIn (en dernier)
