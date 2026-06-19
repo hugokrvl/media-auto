@@ -15,7 +15,7 @@ avec **validation humaine** avant publication. Tourne chaque nuit à 1h (Paris) 
 4. [Limites Groq & architecture 2 modèles](#4-limites-groq--architecture-2-modèles)
 5. [Sources (RSS · YouTube · Email)](#5-sources--pipelinesourcespy)
 6. [Dédup intelligent](#6-dédup-intelligent--pipelinededuppy)
-7. [Identité visuelle HK Média](#7-identité-visuelle--charte-hk-média) (dataviz + Breaking News + images libres)
+7. [Identité visuelle HK Média](#7-identité-visuelle--charte-hk-média) (dataviz + Breaking News + images libres + **résultats sportifs §7.3**)
 8. [Base de données Supabase](#8-base-de-données-supabase)
 9. [Site de planning](#9-site-de-planning-docs--github-pages)
 10. [Variables d'environnement / secrets](#10-variables-denvironnement--secrets)
@@ -43,6 +43,10 @@ GitHub Actions (cron 23:00 UTC = 1h Paris)
 GitHub Actions (cron 15 min)  ← 2e entrée, indépendante
   → pipeline/reprocess.py  régénère les posts dont une transcription a été collée
                            sur le site (digest 8b + enrichissement 70b) — voir §9.1
+
+GitHub Actions (cron 30 min, 17h→02h UTC)  ← 3e entrée, indépendante
+  → pipeline/sports/sports_main.py  résultats sportifs : 1 post/championnat/jour
+                           publié quand TOUS les matchs du jour sont finis — voir §7.3
 ```
 
 Le pipeline **génère et stocke** les posts en statut `pending`. Rien n'est publié
@@ -56,7 +60,8 @@ automatiquement : l'utilisateur approuve chaque post sur le site avant mise en l
 media-auto/
 ├── .github/workflows/
 │   ├── daily_scan.yml     # cron nocturne (pipeline complet) + workflow_dispatch
-│   └── reprocess.yml      # retraitement transcriptions collées (toutes les 15 min)
+│   ├── reprocess.yml      # retraitement transcriptions collées (toutes les 15 min)
+│   └── sports_results.yml # résultats sportifs (toutes les 30 min, 17h→02h UTC) — voir §7.3
 ├── pipeline/
 │   ├── main.py            # orchestrateur (boucle, dédup, max 7 posts/nuit)
 │   ├── reprocess.py       # regénère un post depuis une transcription collée
@@ -75,7 +80,12 @@ media-auto/
 │   ├── validate_sources.py# OUTIL : teste chaque flux en réel
 │   ├── gallery.py         # OUTIL : planche-contact de tous les designs
 │   ├── make_preview.py    # OUTIL : aperçu du site de planning (PNG)
-│   └── _test_*.py         # tests offline (dedup, email, youtube) — voir §11
+│   ├── _test_*.py         # tests offline (dedup, email, youtube) — voir §11
+│   └── sports/            # MODULE résultats sportifs (flux indépendant) — voir §7.3
+│       ├── sports_main.py     # orchestrateur (1 post/championnat/jour quand tout est fini)
+│       ├── api_client.py      # client API-Sports (foot/basket/F1/rugby) + ESPN (sans clé)
+│       ├── leagues.py         # config championnats suivis + saisons courantes
+│       └── scores_renderer.py # rendu PIL des posts scores + podium F1 (+ portrait vainqueur)
 ├── docs/                  # SITE de planning (GitHub Pages) : index.html, app.js, style.css
 ├── poster/                # publication réseaux (phase ultérieure)
 ├── requirements.txt
@@ -357,6 +367,65 @@ Wikimedia/Unsplash/Pexels trouve des résultats pertinents depuis des titres en 
 
 Tester : `python _test_wikimedia.py` (génère des Breaking News avec images Wikimedia en local).
 
+### 7.3 Posts Résultats Sportifs (`pipeline/sports/`)
+
+Flux **indépendant** du pipeline nocturne : un **post par championnat et par jour**, publié
+**uniquement quand TOUS les matchs prévus du jour sont terminés** (jamais de score partiel).
+Tourne via `sports_results.yml` toutes les 30 min (17h→02h UTC) pour rattraper chaque fin de
+match. Comme le reste, les posts arrivent en `status='pending'` sur le site de planning.
+
+**Sources de données (deux étages)** :
+| Source | Clé | Couvre | Pourquoi |
+|--------|-----|--------|----------|
+| **ESPN** (`site.api.espn.com`) | aucune | Coupe du Monde, Euro, Copa América | temps réel, **sans clé**, couvre 2026 (la CdM en cours) |
+| **API-Sports** (`*.api-sports.io`) | `API_SPORTS_KEY` | Ligue 1/2/National, La Liga, Premier League, Bundesliga, Serie A, C1, C3, NBA, Betclic Élite, F1, Top 14, Champions Cup | championnats nationaux, **une seule clé** pour tous les sports |
+
+> ⚠️ **Plan gratuit API-Sports limité aux saisons 2022-2024** → impossible d'accéder à 2026.
+> C'est pour ça que les compétitions internationales 2026 passent par **ESPN** (public, sans
+> clé), qui tourne **en premier** dans l'orchestrateur. API-Sports ne sert qu'aux ligues
+> nationales et n'est appelé que si `API_SPORTS_KEY` est présent (sinon ignoré proprement).
+
+**Fichiers** :
+- `leagues.py` — config centralisée : `FOOTBALL_LEAGUES`, `BASKETBALL_LEAGUES`, `RUGBY_LEAGUES`,
+  `ESPN_COMPETITIONS`, couleurs par championnat, `CURRENT_SEASON_*` (foot = 2024 sur le free tier).
+- `api_client.py` — `get_football_fixtures()`, `get_espn_scores()`, `get_f1_race/results()`, etc.
+  + helpers `all_finished()` / `espn_all_finished()` (statuts terminés : `FT/AET/PEN/AWD/WO/CANC/PST/ABD`).
+- `sports_main.py` — orchestrateur : `run_espn()` (toujours), puis `run_football/basketball/f1/rugby()`
+  si clé. `_already_posted()` (anti-doublon via Supabase) + `_save_scores_post()` (upload + insert).
+- `scores_renderer.py` — rendu PIL 1080×1080 (voir design ci-dessous).
+
+**Design des posts** (`scores_renderer.py`, charte HK) :
+- Fond **ardoise dégradé bleuté** (jamais noir pur), **une ligne par match** : logo · nom · score · nom · logo.
+- En-tête léger : accent vertical coloré + titre + sous-titre (PAS de bandeau lourd). **Espacement
+  calculé dynamiquement** (`_header()` mesure chaque ligne → zéro chevauchement titre/sous-titre).
+- Score : gagnant en **jaune moutarde**, perdant en gris foncé, nul en gris clair.
+- **Logos** : viennent collés à chaque équipe par l'API (`team["logo"]`) → toujours le bon
+  logo pour la bonne équipe (un mauvais logo = forcément une donnée de test, jamais la prod).
+  ESPN fournit des **drapeaux PNG** pour les sélections nationales.
+- **Traduction FR 100% fiable** (`_fr`, dict `_FR_RAW` normalisé sans accents) : pays
+  (`Türkiye/Turkiye/TURKEY → Turquie`) ET clubs (`Barcelona → Barcelone`, `Bayern → Bayern Munich`).
+  Insensible à la casse/accents → robuste quelle que soit la graphie de l'API.
+
+**Podium F1 + portrait du vainqueur** (`make_f1_podium`) :
+- Classement 1/2/3 (or/argent/bronze) à gauche, **portrait du vainqueur à droite** (badge VAINQUEUR).
+- Portrait par ordre de fiabilité : **(1)** override curaté Commons (`_PORTRAIT_FILES`, dict de
+  fichiers vérifiés, **rotation par jour** si plusieurs photos) → **(2)** image d'infobox Wikipédia
+  (`fr` puis `en`, fiable pour ~18 des 22 pilotes) → **(3)** recherche Wikimedia générique.
+- L'override sert aux pilotes dont l'infobox renvoie une voiture/photo de loin (ex. **Piastri**).
+  Les vainqueurs récurrents (Verstappen, Norris, Leclerc, Hamilton, Russell, Antonelli) ont déjà
+  un bon visage via l'infobox.
+- **Robustesse Wikimedia** : on demande des **miniatures aux tailles cachées** (`iiurlwidth`, pas
+  l'original pleine résolution) + **backoff sur HTTP 429** dans `_download()`. Le 429 ne survient
+  qu'en cas de téléchargements massifs (tests) ; en prod = 1 portrait/course, jamais un souci.
+
+**Tester en local** (génère des PNG de démo) :
+```bash
+cd pipeline/sports
+$env:PYTHONIOENCODING="utf-8"   # Windows : éviter UnicodeEncodeError sur les accents
+python sports_main.py            # run réel (ESPN sans clé ; API-Sports si API_SPORTS_KEY)
+```
+Volume estimé : ~2-6 posts/jour en période chargée (1 par championnat ayant fini sa journée).
+
 ---
 
 ## 8. Base de données Supabase
@@ -461,6 +530,8 @@ NTFY_TOPIC
 NEWSLETTER_EMAIL         # boîte Gmail dédiée (ex: hugo1actualite@gmail.com)
 NEWSLETTER_PASSWORD      # mot de passe d'application (16 car.), PAS le mdp du compte
 NEWSLETTER_IMAP          # optionnel : déduit du domaine si absent
+API_SPORTS_KEY           # résultats sportifs (§7.3) — 1 clé pour tous les sports api-sports.io.
+                         #   OPTIONNEL : sans elle, seules les compétitions ESPN (CdM/Euro/Copa) tournent.
 TWITTER_API_KEY / TWITTER_API_SECRET / TWITTER_ACCESS_TOKEN / TWITTER_ACCESS_SECRET
 INSTAGRAM_ACCESS_TOKEN / INSTAGRAM_BUSINESS_ID
 LINKEDIN_ACCESS_TOKEN / LINKEDIN_PERSON_ID
@@ -525,6 +596,8 @@ python reprocess.py            # retraite les transcriptions collées (file Supa
 | ⏳ | **Transcription YouTube par Whisper** | télécharger l'audio (`yt-dlp`) → Groq `whisper-large-v3` (28 800 s/jour gratuits). Risque : téléchargement audio bloqué sur IP cloud. Automatiserait ce que le collage fait à la main |
 | ⏳ | **Déclencheur instantané du retraitement** | Edge Function Supabase : le bouton « Générer » lancerait `reprocess.yml` en quelques secondes (au lieu d'attendre le cron 15 min). Reporté — voir décision ci-dessous |
 | ✅ | **Posts Breaking News** | photo plein cadre 1080×1080, titre ALL CAPS, chiffres jaunes auto, Wikimedia → Unsplash → Pexels — FAIT (§7.1 / §7.2) |
+| ✅ | **Module résultats sportifs** | 1 post/championnat/jour quand tout est fini ; ESPN (CdM/Euro, sans clé) + API-Sports (ligues nat.) ; design scores + podium F1 avec portrait du vainqueur ; traduction FR clubs/pays — FAIT (§7.3) |
+| ⏳ | **Portraits F1 : rotation complète** | curer 2-3 visages vérifiés par vainqueur récurrent (mécanisme `_PORTRAIT_FILES` déjà en place) + override Stroll/Bearman/Albon. Faible priorité (l'infobox couvre déjà les favoris) |
 | ⏳ | **Publication réseaux** (`poster/`) | X (tweepy), Instagram (Graph API), LinkedIn (Share API) après « Approuver » |
 | ⏳ | **Déduplication par URL exacte** | renfort du dédup sémantique existant |
 | ⏳ | **Formats portrait/paysage** | layouts dédiés (story 9:16) en plus du carré |
