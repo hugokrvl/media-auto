@@ -49,6 +49,10 @@ _NOT_PROPER = {
     "chinois", "chinoise", "japonais", "russe", "allemand", "espagnol", "italien",
     "britannique", "europeen", "europeenne", "occident", "occidental",
     "visa", "total", "orange", "free",
+    # Mots de format / live-blog souvent EN MAJUSCULE en tête de titre (Le Monde…)
+    "direct", "live", "video", "reportage", "analyse", "tribune", "edito",
+    "editorial", "exclusif", "enquete", "entretien", "interview", "recit",
+    "chronique", "temoignage", "decryptage", "infographie", "carte", "vrai", "faux",
 }
 
 
@@ -137,6 +141,75 @@ def _keywords(article: dict) -> str:
     return query
 
 
+# Indices d'œuvres d'art / peintures anciennes dans un nom de fichier → à écarter
+# (on veut une PHOTO, pas un portrait peint d'un homonyme du 17e siècle).
+_PAINTING = {
+    "bildnis", "gemalde", "peinture", "ritratto", "retrato", "canvas", "fresco",
+    "portrait d homme", "portrait de femme", "portrait of a", "self portrait",
+    "autoportrait", "huile sur", "oil on", "tableau", "ecole francaise",
+    "homme de guerre", "engraving", "gravure", "lithograph", "litho", "lithographie",
+    "pfann", "daguerreotype", "etching", "woodcut", "miniatur", "portraitof",
+}
+
+# Prénoms courants : ne JAMAIS chercher une image avec un prénom SEUL (sinon on matche
+# un homonyme : "Eric" → Eric Boe l'astronaute, "Christine" → Christine Nilsson).
+_FIRST_NAMES = {
+    "eric", "christine", "emmanuel", "donald", "jean", "pierre", "marie", "paul",
+    "jacques", "francois", "nicolas", "michel", "philippe", "andre", "louis",
+    "charles", "henri", "claude", "bernard", "alain", "daniel", "robert", "david",
+    "john", "james", "michael", "william", "richard", "thomas", "george", "joseph",
+    "kevin", "mark", "elon", "jeff", "bill", "steve", "tim", "sam", "max", "anna",
+    "sophie", "julie", "laura", "sarah", "emma", "alex", "antoine", "olivier",
+    "vladimir", "volodymyr", "joe", "kamala", "boris", "olaf", "giorgia", "rishi",
+}
+
+
+def _looks_like_painting(filename: str) -> bool:
+    fn = re.sub(r"[^a-z0-9]+", " ", _norm_word(filename))
+    return any(p in fn for p in _PAINTING)
+
+
+def _is_historical(filename: str) -> bool:
+    """Vrai si le nom de fichier référence une année ancienne (≤ 1965) → personnage
+    historique / homonyme mort (ex : 'Herman Schwab (1861-1951)'), pas le sujet d'actu."""
+    years = [int(y) for y in re.findall(r"1[5-9]\d\d", filename)]
+    return any(y <= 1965 for y in years)
+
+
+def _token_in(needle: str, haystack: str) -> bool:
+    """Vrai si `needle` est un MOT ENTIER de `haystack` (évite direct⊂directeur)."""
+    h = re.sub(r"[^a-z0-9]+", " ", _norm_word(haystack))
+    return f" {needle} " in f" {h} "
+
+
+def _wikipedia_pageimage(name: str) -> str | None:
+    """Image d'infobox Wikipédia pour une entité nommée (personne, lieu, société,
+    sujet). Bien plus fiable qu'une recherche Commons : c'est LA photo canonique.
+    Ex : 'Volodymyr Zelensky' → son portrait officiel ; 'Canicule' → soleil/chaleur."""
+    for lang in ("fr", "en"):
+        params = urllib.parse.urlencode({
+            "action": "query", "titles": name, "prop": "pageimages",
+            "piprop": "thumbnail", "pithumbsize": "1000",
+            "format": "json", "redirects": "1",
+        })
+        url = f"https://{lang}.wikipedia.org/w/api.php?{params}"
+        try:
+            req = urllib.request.Request(
+                url, headers={"User-Agent": "HKMedia/1.0 (mediaauto; hugo1actualite@gmail.com)"})
+            with urllib.request.urlopen(req, timeout=10) as r:
+                data = json.loads(r.read())
+            for p in data.get("query", {}).get("pages", {}).values():
+                src = p.get("thumbnail", {}).get("source", "")
+                fn = src.split("/")[-1]   # filtre sur le NOM DE FICHIER, pas l'URL
+                if src and not _looks_like_painting(fn) \
+                        and not any(s in _norm_word(fn) for s in _WIKI_SKIP):
+                    print(f"[WIKIPEDIA] Image infobox : {name} → {fn[:50]}")
+                    return src
+        except Exception:
+            continue
+    return None
+
+
 _WIKIMEDIA_API = "https://commons.wikimedia.org/w/api.php"
 # Extensions photo acceptées (exclut SVG, diagrammes, icônes)
 _PHOTO_EXT = {".jpg", ".jpeg", ".png", ".webp"}
@@ -192,7 +265,10 @@ def _fetch_wikimedia(query: str, prefer_name: str | None = None) -> str | None:
                 continue
             if any(skip in tl for skip in _WIKI_SKIP):
                 continue
-            if prefer_norm and prefer_norm in tl_norm:
+            if _looks_like_painting(title) or _is_historical(title):  # peinture/homonyme ancien
+                continue
+            # Match par MOT ENTIER (direct ne doit pas matcher directeur)
+            if prefer_norm and _token_in(prefer_norm, title):
                 candidates_prio.append(title)
             else:
                 candidates_rest.append(title)
@@ -305,40 +381,45 @@ def _fetch_pexels(query: str) -> str | None:
 
 def _wikimedia_cascade(article: dict) -> str | None:
     """
-    Wikimedia UNIQUEMENT pour les noms propres (personnes, lieux, marques précises).
-    On exige que le nom propre figure dans le nom du fichier (strict) → on évite les
-    images hors-sujet. Si aucun nom propre exploitable, on renvoie None et l'appelant
-    bascule sur Unsplash (photo de concept, bien plus pertinente pour un sujet abstrait).
+    Image pour les entités nommées du titre, par ordre de fiabilité :
+    1. Image d'INFOBOX Wikipédia (la photo canonique de l'entité — ultra fiable)
+    2. Recherche Commons STRICTE (mot entier dans le fichier, sans peinture)
+    Si aucun nom propre exploitable → None (l'appelant bascule sur Unsplash concept).
     """
     title_orig = (article.get("title_fr") or article.get("title", ""))
     proper = [w for w in re.findall(r'\b[A-ZÀ-Ÿ][a-zà-ÿA-ZÀ-Ÿ]{2,}\b', title_orig)
               if _is_proper(w)]
     if not proper:
-        return None   # sujet sans nom propre → Wikimedia inadapté, Unsplash s'en charge
+        return None   # sujet sans nom propre → Unsplash concept s'en charge
 
-    # Requêtes du plus spécifique au plus large, TOUTES filtrées sur le nom propre.
-    # 1) Si 2 noms propres (prénom + nom) : on tente d'abord le NOM COMPLET filtré sur
-    #    le NOM DE FAMILLE → évite de matcher un homonyme par le seul prénom
-    #    (ex : "Christine" seul trouvait la cantatrice Christine Nilsson, pas Lagarde).
-    # 2) Puis CHAQUE nom propre individuellement → si "Windcoop"/"Sailcoop" ne donnent
-    #    rien, on tente "Marseille", "Madagascar"… avant de basculer sur Unsplash.
-    queries: list[tuple[str, str]] = []
-    if len(proper) >= 2:
-        full = " ".join(proper[:2])
-        last = _norm_word(proper[1])
-        queries += [(f"{full} portrait", last), (full, last)]
-    for p in proper[:4]:
-        queries.append((f"{p} portrait", _norm_word(p)))
-        queries.append((p, _norm_word(p)))
-    seen = set()
-    queries = [(q, pr) for q, pr in queries if not (q in seen or seen.add(q))]
+    # Entités candidates :
+    #  - PAIRES ADJACENTES d'abord (un nom de personne = prénom + nom CONSÉCUTIFS,
+    #    ex "Eric Schmidt" et non "NASA Eric")
+    #  - puis noms propres SEULS, mais JAMAIS un prénom isolé (→ homonymes)
+    pairs = [f"{proper[i]} {proper[i+1]}" for i in range(len(proper) - 1)][:3]
+    singles = [p for p in proper
+               if _norm_word(p) not in _FIRST_NAMES and len(p) >= 4][:3]
+    seen: set[str] = set()
+    entities = [e for e in (pairs + singles)
+                if not (e.lower() in seen or seen.add(e.lower()))]
 
-    for q, prefer in queries:
-        if not q or len(q) < 3:
-            continue
-        url = _fetch_wikimedia(q, prefer_name=prefer)
+    # 1. Infobox Wikipédia (résout les redirections : Zelensky → Volodymyr Zelensky)
+    for ent in entities:
+        url = _wikipedia_pageimage(ent)
         if url:
             return url
+
+    # 2. Repli : recherche Commons stricte, UNIQUEMENT pour les entités MULTI-MOTS
+    #    (noms complets). Un nom isolé ("Schwab") matche trop d'homonymes → on s'abstient
+    #    et on laisse Unsplash fournir une photo de concept pertinente.
+    for ent in entities:
+        if " " not in ent:
+            continue
+        last = _norm_word(ent.split()[-1])
+        for q in (f"{ent} portrait", ent):
+            url = _fetch_wikimedia(q, prefer_name=last)
+            if url:
+                return url
     return None
 
 

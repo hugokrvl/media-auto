@@ -56,19 +56,34 @@ def generate_captions(article: dict) -> dict:
         summary=article.get("summary", "")[:400],
     )
 
-    response = client.chat.completions.create(
-        model=GENERATION_MODEL,
-        messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": prompt},
-        ],
-        temperature=0.7,
-        max_tokens=600,
-        response_format={"type": "json_object"},
-    )
+    # 1200 tokens : 3 textes (Twitter + Instagram 150-300 mots + LinkedIn 200-400 mots)
+    # dépassaient les 600 précédents → JSON tronqué → erreur 'json_validate_failed'.
+    def _ask(max_toks: int) -> dict:
+        response = client.chat.completions.create(
+            model=GENERATION_MODEL,
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.7,
+            max_tokens=max_toks,
+            response_format={"type": "json_object"},
+        )
+        return json.loads(response.choices[0].message.content.strip())
 
-    raw = response.choices[0].message.content.strip()
-    captions = json.loads(raw)
+    try:
+        captions = _ask(1200)
+    except Exception as e:
+        print(f"[GENERATOR] captions échec ({type(e).__name__}), repli minimal : {e}")
+        # Repli : un post DOIT toujours être créé, même sans captions IA.
+        t = article.get("title_fr") or article.get("title", "")
+        s = (article.get("summary", "") or "").strip()[:300]
+        cat = article.get("category", "")
+        captions = {
+            "twitter":   t[:250],
+            "instagram": f"{t}\n\n{s}\n\n#{cat} #actualité".strip(),
+            "linkedin":  f"{t}\n\n{s}".strip(),
+        }
 
     # Sécurité longueur Twitter
     if len(captions.get("twitter", "")) > 270:

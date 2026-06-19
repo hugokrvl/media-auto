@@ -357,28 +357,34 @@ Titre tronqué à **80 caractères** max (coupe au dernier mot entier + `…`) p
 
 Cascade par ordre de priorité :
 
-1. **Wikimedia Commons** (sans clé API) — UNIQUEMENT pour les noms propres (personnes,
-   lieux, marques précises). Licence CC-BY-SA / domaine public.
-   - **Extraction stricte des noms propres** (`_is_proper`) : on exige une vraie
-     MAJUSCULE initiale (la regex `À-Ÿ` capture aussi é/è/à minuscules → rejetés) et on
-     exclut (`_NOT_PROPER`) : mots-outils capitalisés en début de titre (Comment, Selon,
-     Pourquoi…), **pays/gentilés** (France, États-Unis, Iran… = mauvais ancrages → une
-     place ou un drapeau hors-sujet) et **marques ambiguës** (Visa, Total, Orange…).
-   - **Nom complet d'abord** : avec 2 noms propres (prénom + nom) on cherche le nom complet
-     filtré sur le NOM DE FAMILLE → évite les homonymes (« Christine » seul trouvait la
-     cantatrice Christine Nilsson, pas Lagarde). Puis chaque nom propre individuellement
-     (« Windcoop » échoue → « Marseille »…).
-   - **Filtre STRICT** (`prefer_name`) : on n'accepte un résultat que si le nom propre figure
-     dans le nom du fichier. Sinon on renvoie `None` → bascule sur Unsplash (photo de concept,
-     bien plus pertinente pour un sujet abstrait qu'une image Wikimedia littérale au hasard).
-   - Anti-bruit : exclut `.svg`, cartes, drapeaux, logos, screenshots (`_WIKI_SKIP`) + largeur ≥ 400 px.
-   - Exemples validés : Lagarde→portrait officiel, Macron→Macron, Visa/Mastercard→puce Mastercard,
-     Mbappé→Mbappé, SpaceX→équipage SpaceX, Windcoop→voilier Sailcoop.
+1. **Wikipédia (image d'infobox)** — source PRINCIPALE pour les entités nommées, via
+   `_wikipedia_pageimage()` (API `pageimages`, fr puis en). C'est la **photo canonique**
+   de l'entité → ultra fiable (même méthode que les portraits pilotes F1). Résout les
+   redirections : « Zelensky » → page « Volodymyr Zelensky » → portrait officiel 2022.
+   - **Extraction stricte des noms propres** (`_is_proper`) : exige une vraie MAJUSCULE
+     initiale (la regex `À-Ÿ` capture aussi é/è/à minuscules → rejetés) et exclut
+     (`_NOT_PROPER`) : mots-outils (Comment, Selon…), **mots de format/live-blog**
+     (DIRECT, LIVE, VIDÉO, ANALYSE…), **pays/gentilés** (France, Iran… → place/drapeau
+     hors-sujet) et **marques ambiguës** (Visa, Total…).
+   - **Entités candidates** : PAIRES adjacentes d'abord (`Eric Schmidt`, pas `NASA Eric`),
+     puis noms isolés — **jamais un prénom seul** (`_FIRST_NAMES`) qui matcherait un
+     homonyme (« Eric » → l'astronaute Eric Boe).
+2. **Wikimedia Commons** (repli, sans clé) — recherche STRICTE, seulement pour les entités
+   **multi-mots** (un nom de famille isolé matche trop d'homonymes → on s'abstient).
+   - Match par **MOT ENTIER** (`_token_in` : `direct` ne matche plus `directeur`).
+   - **Filtres** : peintures/gravures anciennes (`_looks_like_painting` : bildnis, litho,
+     huile sur toile…), **personnages historiques** (`_is_historical` : année ≤ 1965 dans
+     le nom → « Herman Schwab (1861-1951) » écarté), + `.svg`/cartes/logos (`_WIKI_SKIP`).
+   - Si rien de fiable → `None` → bascule sur Unsplash (photo de concept, bien plus pro
+     qu'un mauvais visage). **Précision avant exhaustivité.**
+   - Exemples validés : Lagarde→portrait BCE, Zelensky→portrait officiel, Eric Schmidt→sa
+     photo, SpaceX→lancement de fusée, Mbappé→Mbappé ; Schwab/Visa/Canicule→photo concept.
 
-2. **Unsplash** (`UNSPLASH_ACCESS_KEY`) — photos créatives haute qualité, licence libre commerciale.
-   Utilise la clé **Access Key** (pas la Secret Key) avec header `Client-ID`.
+3. **Unsplash** (`UNSPLASH_ACCESS_KEY`) — photos créatives haute qualité, licence libre commerciale.
+   Utilise la clé **Access Key** (pas la Secret Key) avec header `Client-ID`. C'est ici qu'aboutissent
+   les sujets abstraits / ambigus (finance, concepts) → photo de concept pertinente.
 
-3. **Pexels** (`PEXELS_API_KEY`) — fallback final, photos libres de droits.
+4. **Pexels** (`PEXELS_API_KEY`) — fallback final, photos libres de droits.
 
 **Traduction FR→EN** : dictionnaire `_TRANSLATE` dans `image_fetch.py` (canicule→heatwave,
 guerre→war, taux directeur→key interest rate, ukraine→ukraine, etc.) pour que la recherche
