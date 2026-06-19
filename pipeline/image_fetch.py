@@ -442,14 +442,23 @@ def fetch_photo_url(article: dict, orientation: str = "square") -> str | None:
     return url
 
 
-def download_image(url: str) -> bytes | None:
-    """Télécharge une image depuis une URL. Retourne les bytes ou None."""
-    try:
-        req = urllib.request.Request(
-            url, headers={"User-Agent": "Mozilla/5.0 (compatible; HKMedia/1.0)"}
-        )
-        with urllib.request.urlopen(req, timeout=15) as r:
-            return r.read()
-    except Exception as e:
-        print(f"[PEXELS] Erreur téléchargement: {type(e).__name__}: {e}")
-        return None
+def download_image(url: str, retries: int = 3) -> bytes | None:
+    """Télécharge une image depuis une URL. Retry avec backoff sur 429 (rate-limit)."""
+    import time
+    for attempt in range(retries):
+        try:
+            req = urllib.request.Request(
+                url, headers={"User-Agent": "Mozilla/5.0 (compatible; HKMedia/1.0)"}
+            )
+            with urllib.request.urlopen(req, timeout=15) as r:
+                return r.read()
+        except urllib.error.HTTPError as e:
+            if e.code == 429 and attempt < retries - 1:
+                time.sleep(1.5 * (attempt + 1))
+                continue
+            print(f"[IMAGE] Erreur téléchargement: HTTP {e.code}")
+            return None
+        except Exception as e:
+            print(f"[IMAGE] Erreur téléchargement: {type(e).__name__}: {e}")
+            return None
+    return None
