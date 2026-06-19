@@ -35,21 +35,30 @@ def _date_label() -> str:
     return f"{_JOURS[d.weekday()].capitalize()} {d.day} {_MOIS[d.month]} {d.year}"
 
 
-# ── Univers d'actions mondiales (curaté = fiable) ──────────────────────────────
-# (nom affiché, symbole Yahoo). Grandes capitalisations US / Europe / Asie.
+# ── Univers : grandes capitalisations du MSCI World (marchés développés) ────────
+# TOUS les tickers sont cotés en USD (ADR américains pour les sociétés étrangères)
+# → une seule devise, même séance de cotation : aucun problème de change.
+# MSCI World = marchés développés uniquement → pas de TSMC/Samsung/Alibaba (émergents).
+# (nom affiché, symbole Yahoo en USD)
 WORLD_STOCKS = [
+    # États-Unis
     ("Apple", "AAPL"), ("Microsoft", "MSFT"), ("Nvidia", "NVDA"), ("Amazon", "AMZN"),
-    ("Alphabet", "GOOGL"), ("Meta", "META"), ("Tesla", "TSLA"), ("Broadcom", "AVGO"),
-    ("AMD", "AMD"), ("Netflix", "NFLX"), ("JPMorgan", "JPM"), ("Visa", "V"),
-    ("Walmart", "WMT"), ("Exxon", "XOM"), ("Coca-Cola", "KO"), ("Oracle", "ORCL"),
-    ("Eli Lilly", "LLY"), ("Berkshire", "BRK-B"), ("Disney", "DIS"), ("McDonald's", "MCD"),
-    ("LVMH", "MC.PA"), ("L'Oréal", "OR.PA"), ("TotalEnergies", "TTE.PA"),
-    ("Airbus", "AIR.PA"), ("Sanofi", "SAN.PA"), ("Schneider", "SU.PA"),
-    ("ASML", "ASML.AS"), ("SAP", "SAP.DE"), ("Siemens", "SIE.DE"),
-    ("Nestlé", "NESN.SW"), ("Novartis", "NOVN.SW"), ("Novo Nordisk", "NOVO-B.CO"),
-    ("Shell", "SHEL.L"), ("AstraZeneca", "AZN.L"), ("Toyota", "7203.T"),
-    ("Sony", "6758.T"), ("TSMC", "TSM"), ("Samsung", "005930.KS"),
-    ("Alibaba", "BABA"), ("Tencent", "TCEHY"),
+    ("Alphabet", "GOOGL"), ("Meta", "META"), ("Broadcom", "AVGO"), ("Tesla", "TSLA"),
+    ("Eli Lilly", "LLY"), ("JPMorgan", "JPM"), ("Visa", "V"), ("UnitedHealth", "UNH"),
+    ("Exxon", "XOM"), ("Mastercard", "MA"), ("Costco", "COST"), ("J&J", "JNJ"),
+    ("Home Depot", "HD"), ("P&G", "PG"), ("Walmart", "WMT"), ("Netflix", "NFLX"),
+    ("Oracle", "ORCL"), ("AbbVie", "ABBV"), ("Coca-Cola", "KO"), ("AMD", "AMD"),
+    ("Chevron", "CVX"), ("Salesforce", "CRM"), ("Merck", "MRK"), ("PepsiCo", "PEP"),
+    ("Adobe", "ADBE"), ("McDonald's", "MCD"), ("Disney", "DIS"), ("Caterpillar", "CAT"),
+    ("Boeing", "BA"),
+    # Reste du MSCI World, via ADR cotés en USD
+    ("Novo Nordisk", "NVO"), ("ASML", "ASML"), ("SAP", "SAP"), ("Toyota", "TM"),
+    ("Nestlé", "NSRGY"), ("Novartis", "NVS"), ("Roche", "RHHBY"), ("Shell", "SHEL"),
+    ("AstraZeneca", "AZN"), ("HSBC", "HSBC"), ("Unilever", "UL"), ("LVMH", "LVMUY"),
+    ("TotalEnergies", "TTE"), ("Sanofi", "SNY"), ("Sony", "SONY"),
+    ("Mitsubishi UFJ", "MUFG"), ("Honda", "HMC"), ("GSK", "GSK"), ("BP", "BP"),
+    ("Diageo", "DEO"), ("Rio Tinto", "RIO"), ("BHP", "BHP"), ("UBS", "UBS"),
+    ("Siemens", "SIEGY"), ("Deutsche Bank", "DB"),
 ]
 
 

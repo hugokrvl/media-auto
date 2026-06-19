@@ -487,10 +487,13 @@ Trois posts supplémentaires, **dispatchés selon le jour** par un seul script
 | **Samedi** (10h UTC) | **Top / Flop de la semaine** | variation ~5 séances (historique Yahoo `range=1mo`) |
 | **Dimanche** (16h UTC) | **Sentiment des marchés** | **VIX** (`^VIX`) + **Fear & Greed crypto** (alternative.me) |
 
-**Fiabilité = univers curaté.** Plutôt qu'un *screener* instable, `WORLD_STOCKS`
-(`markets_extra.py`) liste ~40 grandes capitalisations mondiales (US / Europe / Asie)
-dont on classe la variation → top 5 hausses + top 5 baisses. Chaque cours vient du
-endpoint `v8/chart` éprouvé (sans clé). Devises multiples gérées (`$ € £ ¥ ₩…`).
+**Fiabilité = univers curaté en USD.** Plutôt qu'un *screener* instable, `WORLD_STOCKS`
+(`markets_extra.py`) liste ~58 grandes capitalisations du **MSCI World** (marchés
+développés) dont on classe la variation → top 5 hausses + top 5 baisses. **Tous les
+tickers sont cotés en USD** (ADR américains pour les sociétés étrangères : `NVO`, `ASML`,
+`TM`, `NSRGY`, `SHEL`, `LVMUY`…) → **une seule devise, même séance de cotation, aucun
+problème de change**. Marchés émergents exclus (TSMC/Samsung/Alibaba ≠ MSCI World).
+Chaque cours vient du endpoint `v8/chart` éprouvé (sans clé).
 
 **Sentiment (dimanche)** — deux panneaux avec jauge colorée + curseur :
 - **Bourse · VIX** : <15 Calme · 15-20 Normal · 20-30 Nervosité · >30 Panique (échelle 0-40).
