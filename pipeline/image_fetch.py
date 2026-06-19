@@ -28,6 +28,44 @@ _STOP = {
     "its", "by", "from", "that", "this", "as", "be", "was", "were",
 }
 
+# Mots français/anglais souvent EN MAJUSCULE en début de titre mais qui NE SONT PAS
+# des noms propres (sinon on cherche "Comment portrait" → peinture aléatoire).
+# Comparés sans accents/casse.
+_NOT_PROPER = {
+    "comment", "pourquoi", "quand", "selon", "voici", "voila", "ainsi", "alors",
+    "depuis", "cependant", "toutefois", "neanmoins", "malgre", "apres", "avant",
+    "contre", "entre", "vers", "chez", "quel", "quelle", "quels", "quelles",
+    "combien", "faut", "faire", "cette", "cet", "ces", "leur", "leurs", "notre",
+    "votre", "nos", "vos", "donc", "car", "plus", "moins", "tout", "tous", "toute",
+    "toutes", "grand", "grande", "nouveau", "nouvelle", "encore", "enfin", "bientot",
+    "this", "that", "these", "those", "what", "why", "when", "which", "their",
+    "there", "here", "with", "from", "into", "over", "under", "about", "how",
+    # Pays / régions / gentilés : mauvais ancrages d'image (donnent une place, un
+    # drapeau ou un lieu hors-sujet). Restent utiles comme contexte Unsplash, pas
+    # comme sujet Wikimedia. + marques ambiguës (mot commun ET société).
+    "france", "etats", "unis", "etatsunis", "iran", "chine", "japon", "allemagne",
+    "espagne", "italie", "russie", "ukraine", "royaume", "europe", "afrique",
+    "asie", "amerique", "americain", "americaine", "francais", "francaise",
+    "chinois", "chinoise", "japonais", "russe", "allemand", "espagnol", "italien",
+    "britannique", "europeen", "europeenne", "occident", "occidental",
+    "visa", "total", "orange", "free",
+}
+
+
+def _norm_word(s: str) -> str:
+    import unicodedata
+    return unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode().lower()
+
+
+def _is_proper(w: str) -> bool:
+    """Vrai si le mot est un vrai nom propre candidat (pas un mot-outil capitalisé).
+    Exige une vraie MAJUSCULE en tête : la regex À-Ÿ capture aussi les minuscules
+    accentuées (é, è, à…), qu'on rejette ici."""
+    if len(w) <= 2 or not w[:1].isupper():
+        return False
+    wn = _norm_word(w)
+    return wn not in _STOP and wn not in _NOT_PROPER
+
 # Traductions FR→EN (longues en premier pour éviter les remplacements partiels)
 _TRANSLATE = {
     # Finance
@@ -161,8 +199,16 @@ def _fetch_wikimedia(query: str, prefer_name: str | None = None) -> str | None:
             if len(candidates_prio) + len(candidates_rest) >= 8:
                 break
 
-        # Portraits nommés en tête, reste ensuite → max 3 à interroger
-        candidates = (candidates_prio + candidates_rest)[:3]
+        # Si on cherche un nom propre précis (personne/marque), on est STRICT :
+        # on n'accepte QUE les fichiers dont le nom contient ce nom propre.
+        # Sinon on renverrait une image hors-sujet (peinture, photo random).
+        # → quand rien ne matche, on renvoie None et la cascade bascule sur Unsplash.
+        if prefer_norm:
+            candidates = candidates_prio[:3]
+            if not candidates:
+                return None
+        else:
+            candidates = candidates_rest[:3]
         if not candidates:
             return None
 
@@ -259,40 +305,33 @@ def _fetch_pexels(query: str) -> str | None:
 
 def _wikimedia_cascade(article: dict) -> str | None:
     """
-    Cascade Wikimedia du plus spécifique au plus large.
-    Pour les personnalités (sportifs, politiques, PDGs…), on tente d'abord
-    un portrait individuel en passant le nom propre comme filtre prefer_name.
+    Wikimedia UNIQUEMENT pour les noms propres (personnes, lieux, marques précises).
+    On exige que le nom propre figure dans le nom du fichier (strict) → on évite les
+    images hors-sujet. Si aucun nom propre exploitable, on renvoie None et l'appelant
+    bascule sur Unsplash (photo de concept, bien plus pertinente pour un sujet abstrait).
     """
-    import unicodedata
-    def _norm(s: str) -> str:
-        return unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode().lower()
-
     title_orig = (article.get("title_fr") or article.get("title", ""))
     proper = [w for w in re.findall(r'\b[A-ZÀ-Ÿ][a-zà-ÿA-ZÀ-Ÿ]{2,}\b', title_orig)
-              if w.lower() not in _STOP and len(w) > 2]
+              if _is_proper(w)]
+    if not proper:
+        return None   # sujet sans nom propre → Wikimedia inadapté, Unsplash s'en charge
 
-    full_query = _keywords(article)
-
-    # Cascade : chaque entrée = (requête_wikimedia, prefer_name_pour_filtre_fichier)
-    queries: list[tuple[str, str | None]] = []
-
-    if proper:
-        # 1. Portrait individuel : nom seul + "portrait" → filtre sur le nom dans le fichier
-        queries.append((f"{proper[0]} portrait", _norm(proper[0])))
-        # 2. Nom seul (sans "portrait") — au cas où peu de portraits dispo
-        queries.append((proper[0], _norm(proper[0])))
-        # 3. Deux noms propres ensemble (ex: "Poutine Moscou", "Mbappé France")
-        if len(proper) >= 2:
-            queries.append((" ".join(proper[:2]), _norm(proper[0])))
-
-    # 4. Requête complète traduite (sans filtre par nom)
-    if full_query not in [q for q, _ in queries]:
-        queries.append((full_query, None))
-
-    # 5. Deux premiers mots-clés (fallback large)
-    short = " ".join(full_query.split()[:2])
-    if short and short not in [q for q, _ in queries]:
-        queries.append((short, None))
+    # Requêtes du plus spécifique au plus large, TOUTES filtrées sur le nom propre.
+    # 1) Si 2 noms propres (prénom + nom) : on tente d'abord le NOM COMPLET filtré sur
+    #    le NOM DE FAMILLE → évite de matcher un homonyme par le seul prénom
+    #    (ex : "Christine" seul trouvait la cantatrice Christine Nilsson, pas Lagarde).
+    # 2) Puis CHAQUE nom propre individuellement → si "Windcoop"/"Sailcoop" ne donnent
+    #    rien, on tente "Marseille", "Madagascar"… avant de basculer sur Unsplash.
+    queries: list[tuple[str, str]] = []
+    if len(proper) >= 2:
+        full = " ".join(proper[:2])
+        last = _norm_word(proper[1])
+        queries += [(f"{full} portrait", last), (full, last)]
+    for p in proper[:4]:
+        queries.append((f"{p} portrait", _norm_word(p)))
+        queries.append((p, _norm_word(p)))
+    seen = set()
+    queries = [(q, pr) for q, pr in queries if not (q in seen or seen.add(q))]
 
     for q, prefer in queries:
         if not q or len(q) < 3:

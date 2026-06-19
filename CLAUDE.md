@@ -357,15 +357,23 @@ Titre tronqué à **80 caractères** max (coupe au dernier mot entier + `…`) p
 
 Cascade par ordre de priorité :
 
-1. **Wikimedia Commons** (sans clé API) — photos éditoriales réelles : hommes politiques,
-   villes, bâtiments, marques, événements. Licence CC-BY-SA / domaine public.
-   - Cascade de requêtes du plus spécifique au plus large :
-     1. Noms propres extraits du titre (ex : `"Poutine Moscou"`, `"Decathlon"`)
-     2. Requête complète traduite FR→EN
-     3. 2 premiers mots-clés
-   - Filtres anti-bruit : exclut `.svg`, cartes, drapeaux, logos, screenshots, icônes
-     (liste `_WIKI_SKIP`) + largeur minimum 400 px.
-   - Miniature redimensionnée à **1080 px** via l'API `iiurlwidth`.
+1. **Wikimedia Commons** (sans clé API) — UNIQUEMENT pour les noms propres (personnes,
+   lieux, marques précises). Licence CC-BY-SA / domaine public.
+   - **Extraction stricte des noms propres** (`_is_proper`) : on exige une vraie
+     MAJUSCULE initiale (la regex `À-Ÿ` capture aussi é/è/à minuscules → rejetés) et on
+     exclut (`_NOT_PROPER`) : mots-outils capitalisés en début de titre (Comment, Selon,
+     Pourquoi…), **pays/gentilés** (France, États-Unis, Iran… = mauvais ancrages → une
+     place ou un drapeau hors-sujet) et **marques ambiguës** (Visa, Total, Orange…).
+   - **Nom complet d'abord** : avec 2 noms propres (prénom + nom) on cherche le nom complet
+     filtré sur le NOM DE FAMILLE → évite les homonymes (« Christine » seul trouvait la
+     cantatrice Christine Nilsson, pas Lagarde). Puis chaque nom propre individuellement
+     (« Windcoop » échoue → « Marseille »…).
+   - **Filtre STRICT** (`prefer_name`) : on n'accepte un résultat que si le nom propre figure
+     dans le nom du fichier. Sinon on renvoie `None` → bascule sur Unsplash (photo de concept,
+     bien plus pertinente pour un sujet abstrait qu'une image Wikimedia littérale au hasard).
+   - Anti-bruit : exclut `.svg`, cartes, drapeaux, logos, screenshots (`_WIKI_SKIP`) + largeur ≥ 400 px.
+   - Exemples validés : Lagarde→portrait officiel, Macron→Macron, Visa/Mastercard→puce Mastercard,
+     Mbappé→Mbappé, SpaceX→équipage SpaceX, Windcoop→voilier Sailcoop.
 
 2. **Unsplash** (`UNSPLASH_ACCESS_KEY`) — photos créatives haute qualité, licence libre commerciale.
    Utilise la clé **Access Key** (pas la Secret Key) avec header `Client-ID`.
@@ -381,6 +389,18 @@ Wikimedia/Unsplash/Pexels trouve des résultats pertinents depuis des titres en 
 - `finance` → `"finance economy"`, `tech` → `"technology digital"`, `sport` → `"sport athlete"`
 
 Tester : `python _test_wikimedia.py` (génère des Breaking News avec images Wikimedia en local).
+
+**Actualité qualitative → post photo** (`main.py`) : un article sans données chiffrées
+(`chart_type = infographic`) ne fait PLUS une liste de points souvent vide. On cherche
+une photo sur le sujet (cascade ci-dessus) et, si trouvée, on génère un **post photo plein
+cadre** (`breaking.make_breaking_image(..., badge=None)` — même rendu que Breaking mais
+SANS la mention « BREAKING »), taggé `chart_type = "photo"`. Sinon, repli infographie.
+Le **lien de l'article** est ajouté en fin de description (captions Instagram + LinkedIn).
+
+**KPI sans chevauchement** (`dataviz._make_kpi`) : la police des grandes valeurs ET des
+libellés est **auto-ajustée** à la largeur de carte (`_fit_fontsize`) → une valeur longue
+(« 1,2 billion ») ou un libellé long ne déborde jamais sur la carte voisine. L'unité
+redondante avec la valeur (« 1,2 billion » + « milliards ») est masquée.
 
 ### 7.3 Posts Résultats Sportifs (`pipeline/sports/`)
 

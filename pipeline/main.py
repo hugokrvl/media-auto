@@ -92,13 +92,30 @@ def run():
         try:
             title_slug = _slugify(article["title"]) or f"post_{i}"
 
-            # Dataviz pour chaque réseau
+            # Actualité qualitative (infographic = pas de données chiffrées) :
+            # plutôt qu'une liste de points vide, on cherche une PHOTO sur le sujet
+            # et on fait un post photo plein cadre (sans badge BREAKING). Bien plus pro.
+            photo_bytes = None
+            if (article.get("chart_type", "infographic") == "infographic"
+                    and (image_fetch.UNSPLASH_ACCESS_KEY or image_fetch.PEXELS_API_KEY)):
+                try:
+                    purl = image_fetch.fetch_photo_url(article)
+                    if purl:
+                        photo_bytes = image_fetch.download_image(purl)
+                except Exception as e:
+                    print(f"[MAIN] photo qualitative indisponible : {e}")
+
             image_urls = {}
-            for network in ["instagram", "twitter", "linkedin"]:
-                img_bytes = generate_image(article, network)
-                filename = f"{title_slug}_{network}.png"
-                url = upload_image(img_bytes, filename)
-                image_urls[network] = url
+            if photo_bytes:
+                img_bytes = breaking_renderer.make_breaking_image(article, photo_bytes, badge=None)
+                for network in ["instagram", "twitter", "linkedin"]:
+                    image_urls[network] = upload_image(img_bytes, f"{title_slug}_{network}.png")
+                article = {**article, "chart_type": "photo"}
+            else:
+                # Dataviz pour chaque réseau (KPI/donut/bar/courbe, ou infographic si rien)
+                for network in ["instagram", "twitter", "linkedin"]:
+                    img_bytes = generate_image(article, network)
+                    image_urls[network] = upload_image(img_bytes, f"{title_slug}_{network}.png")
 
             # Captions
             captions = generate_captions(article)

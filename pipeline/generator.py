@@ -74,6 +74,14 @@ def generate_captions(article: dict) -> dict:
     if len(captions.get("twitter", "")) > 270:
         captions["twitter"] = captions["twitter"][:267] + "..."
 
+    # Lien vers l'article source en fin de description (Instagram + LinkedIn).
+    # Twitter exclu (limite de caractères). Permet de retrouver l'article complet.
+    url = article.get("url", "")
+    if url and not url.startswith("https://news.google.com"):
+        link = f"\n\n📄 Article complet : {url}"
+        captions["instagram"] = captions.get("instagram", "") + link
+        captions["linkedin"] = captions.get("linkedin", "") + link
+
     return captions
 
 

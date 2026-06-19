@@ -125,10 +125,13 @@ def _draw_badge(draw: ImageDraw.ImageDraw, label: str, x: int, y: int,
     return y2
 
 
-def make_breaking_image(article: dict, photo_bytes: bytes) -> bytes:
+def make_breaking_image(article: dict, photo_bytes: bytes,
+                        badge: str | None = "BREAKING") -> bytes:
     """
-    Génère un post Breaking News 1080x1080.
+    Génère un post photo plein cadre 1080x1080 (photo libre de droits + titre).
     photo_bytes : JPEG ou PNG d'une photo libre de droits.
+    badge : 2e badge rouge sous la catégorie ("BREAKING" par défaut). Mettre None
+            pour une actualité normale (pas de mention « BREAKING »).
     Retourne les bytes PNG de l'image finale.
     """
     brand.ensure_fonts()
@@ -165,7 +168,8 @@ def make_breaking_image(article: dict, photo_bytes: bytes) -> bytes:
     cat_color = _CAT_COLORS.get(cat, _MUSTARD)
     bx, by = 48, 48
     by2 = _draw_badge(draw, cat_label, bx, by, cat_color, f_badge)
-    _draw_badge(draw, "BREAKING", bx, by2 + 10, _RED, f_badge)
+    if badge:
+        _draw_badge(draw, badge, bx, by2 + 10, _RED, f_badge)
 
     # ── Monogramme HK haut droite ──────────────────────────────────────────────
     hk_r = 40

@@ -171,6 +171,29 @@ def _content_axes(fig, top, bottom=0.14):
     return fig.add_axes([0.085, bottom, 0.83, max(0.3, top - bottom)])
 
 
+def _fit_fontsize(fig, text, fontprops, max_w_frac, fs0, fs_min):
+    """Réduit la police jusqu'à ce que le texte tienne dans max_w_frac (fraction de la
+    largeur figure). Évite que les longues valeurs KPI ('1,2 billion') débordent/chevauchent."""
+    text = str(text)
+    if not text.strip():
+        return fs0
+    max_px = max_w_frac * fig.get_size_inches()[0] * fig.dpi
+    try:
+        r = fig.canvas.get_renderer()
+        fs = fs0
+        while fs > fs_min:
+            t = fig.text(0, 0, text, fontproperties=fontprops, fontsize=fs)
+            w = t.get_window_extent(r).width
+            t.remove()
+            if w <= max_px:
+                return fs
+            fs -= 2
+        return fs_min
+    except Exception:
+        est = max_px / (0.62 * max(1, len(text)))   # repli : estimation par nb de caractères
+        return max(fs_min, min(fs0, est))
+
+
 # ── Graphiques ───────────────────────────────────────────────────────────────
 def _make_kpi(fig, ax, article, top):
     F = fig._hk_fonts
@@ -193,6 +216,7 @@ def _make_kpi(fig, ax, article, top):
     y = 0.155 + (avail - ch) / 2
     # Chiffre dimensionné selon la largeur de carte (gros = data héros)
     num_fs = max(48, min(96, cw * 220))
+    fit_w = cw * 0.84   # largeur utile dans la carte (marge intérieure)
     for i, r in enumerate(data):
         x = x0 + i * (cw + gap)
         col = cols[i]
@@ -203,14 +227,23 @@ def _make_kpi(fig, ax, article, top):
         cx = x + cw / 2
         val = B.fr(r.get("value", 0))
         unit = str(r.get("unit", "")).strip()
-        # CHIFFRE ÉNORME Anton (le héros du post)
+        # Évite la redondance "1,2 billion" + unité "milliards" : si la valeur contient
+        # déjà un ordre de grandeur, on n'affiche pas une unité qui le répète.
+        if unit and any(m in val.lower() for m in ("milli", "billion", "md", "bn", "k")) \
+                and any(m in unit.lower() for m in ("milli", "billion", "md", "bn")):
+            unit = ""
+        # CHIFFRE ÉNORME Anton, police auto-ajustée pour ne JAMAIS déborder de la carte
+        val_fs = _fit_fontsize(fig, val, F["num"], fit_w, num_fs, 30)
         ax.text(cx, y + ch * 0.60, val, ha="center", va="center", color=B.INK,
-                fontproperties=F["num"], fontsize=num_fs, zorder=4)
+                fontproperties=F["num"], fontsize=val_fs, zorder=4)
         if unit:
+            unit_fs = _fit_fontsize(fig, unit, F["num"], fit_w, max(18, val_fs * 0.34), 12)
             ax.text(cx, y + ch * 0.40, unit, ha="center", va="center", color=B.MUSTARD_DK,
-                    fontproperties=F["num"], fontsize=max(18, num_fs * 0.34), zorder=4)
-        ax.text(cx, y + ch * 0.25, str(r.get("label", ""))[:26].upper(), ha="center", va="center",
-                color=B.INK_SOFT, fontproperties=F["body_sb"], fontsize=13, zorder=4)
+                    fontproperties=F["num"], fontsize=unit_fs, zorder=4)
+        lbl = str(r.get("label", ""))[:38].upper()
+        lbl_fs = _fit_fontsize(fig, lbl, F["body_sb"], cw * 0.9, 13, 8)
+        ax.text(cx, y + ch * 0.25, lbl, ha="center", va="center",
+                color=B.INK_SOFT, fontproperties=F["body_sb"], fontsize=lbl_fs, zorder=4)
         ev = str(r.get("evolution", "")).replace("%", "").replace(",", ".").strip()
         try:
             evf = float(ev)
