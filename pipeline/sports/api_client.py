@@ -9,7 +9,8 @@ import urllib.request
 import urllib.parse
 from datetime import date, timedelta
 
-API_KEY = os.environ.get("API_SPORTS_KEY", "")
+# .strip() : un secret collé avec un retour à la ligne donne 'Invalid header value b"***\n"'.
+API_KEY = os.environ.get("API_SPORTS_KEY", "").strip()
 
 _BASES = {
     "football":   "https://v3.football.api-sports.io",

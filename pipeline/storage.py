@@ -14,8 +14,9 @@ _DEDUP_COLS = ("topic_key", "data_sig", "is_update", "update_of")
 _VIDEO_COLS = ("needs_transcript", "pending_transcript")
 _OPTIONAL_COLS = _DEDUP_COLS + _VIDEO_COLS
 
-SUPABASE_URL = os.environ["SUPABASE_URL"]
-SUPABASE_KEY = os.environ["SUPABASE_KEY"]
+# .strip() défensif : un secret collé avec un retour à la ligne casse les en-têtes HTTP.
+SUPABASE_URL = os.environ["SUPABASE_URL"].strip()
+SUPABASE_KEY = os.environ["SUPABASE_KEY"].strip()
 BUCKET = "post-images"
 
 _client: Client | None = None
@@ -26,6 +27,13 @@ def get_client() -> Client:
     if _client is None:
         _client = create_client(SUPABASE_URL, SUPABASE_KEY)
     return _client
+
+
+def __getattr__(name: str):
+    """Permet d'écrire `storage.supabase` (alias paresseux du client Supabase)."""
+    if name == "supabase":
+        return get_client()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 def upload_image(image_bytes: bytes, filename: str) -> str:

@@ -54,7 +54,7 @@ TENNIS_TOURNAMENTS = [
 ESPN_COMPETITIONS = [
     {"slug": "fifa.world",    "name": "Coupe du Monde", "country": "FIFA",     "color": (0, 120, 60)},
     {"slug": "uefa.euro",     "name": "Euro UEFA",      "country": "UEFA",     "color": (0, 51, 160)},
-    {"slug": "conmebol.copa", "name": "Copa América",   "country": "CONMEBOL", "color": (0, 100, 200)},
+    {"slug": "conmebol.america", "name": "Copa América", "country": "CONMEBOL", "color": (0, 100, 200)},
 ]
 
 # ── SAISONS COURANTES ────────────────────────────────────────────────────────
