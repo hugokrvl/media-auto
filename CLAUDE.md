@@ -47,6 +47,10 @@ GitHub Actions (cron 15 min)  ← 2e entrée, indépendante
 GitHub Actions (cron 30 min, 17h→02h UTC)  ← 3e entrée, indépendante
   → pipeline/sports/sports_main.py  résultats sportifs : 1 post/championnat/jour
                            publié quand TOUS les matchs du jour sont finis — voir §7.3
+
+GitHub Actions (cron 21h30 UTC, lun-ven)  ← 4e entrée, indépendante
+  → pipeline/markets/markets_main.py  clôture des marchés : 1 post/jour
+                           (indices + BTC + Or via Yahoo Finance) — voir §7.4
 ```
 
 Le pipeline **génère et stocke** les posts en statut `pending`. Rien n'est publié
@@ -61,7 +65,8 @@ media-auto/
 ├── .github/workflows/
 │   ├── daily_scan.yml     # cron nocturne (pipeline complet) + workflow_dispatch
 │   ├── reprocess.yml      # retraitement transcriptions collées (toutes les 15 min)
-│   └── sports_results.yml # résultats sportifs (toutes les 30 min, 17h→02h UTC) — voir §7.3
+│   ├── sports_results.yml # résultats sportifs (toutes les 30 min, 17h→02h UTC) — voir §7.3
+│   └── markets_close.yml  # clôture des marchés (21h30 UTC, lun-ven) — voir §7.4
 ├── pipeline/
 │   ├── main.py            # orchestrateur (boucle, dédup, max 7 posts/nuit)
 │   ├── reprocess.py       # regénère un post depuis une transcription collée
@@ -81,11 +86,14 @@ media-auto/
 │   ├── gallery.py         # OUTIL : planche-contact de tous les designs
 │   ├── make_preview.py    # OUTIL : aperçu du site de planning (PNG)
 │   ├── _test_*.py         # tests offline (dedup, email, youtube) — voir §11
-│   └── sports/            # MODULE résultats sportifs (flux indépendant) — voir §7.3
-│       ├── sports_main.py     # orchestrateur (1 post/championnat/jour quand tout est fini)
-│       ├── api_client.py      # client API-Sports (foot/basket/F1/rugby) + ESPN (sans clé)
-│       ├── leagues.py         # config championnats suivis + saisons courantes
-│       └── scores_renderer.py # rendu PIL des posts scores + podium F1 (+ portrait vainqueur)
+│   ├── sports/            # MODULE résultats sportifs (flux indépendant) — voir §7.3
+│   │   ├── sports_main.py     # orchestrateur (1 post/championnat/jour quand tout est fini)
+│   │   ├── api_client.py      # client API-Sports (foot/basket/F1/rugby) + ESPN (sans clé)
+│   │   ├── leagues.py         # config championnats suivis + saisons courantes
+│   │   └── scores_renderer.py # rendu PIL des posts scores + podium F1 (+ portrait vainqueur)
+│   └── markets/           # MODULE clôture des marchés (flux indépendant) — voir §7.4
+│       ├── markets_main.py     # orchestrateur (1 post/jour, données Yahoo Finance)
+│       └── markets_renderer.py # rendu PIL (indices groupés, variation vert/rouge)
 ├── docs/                  # SITE de planning (GitHub Pages) : index.html, app.js, style.css
 ├── poster/                # publication réseaux (phase ultérieure)
 ├── requirements.txt
@@ -426,6 +434,42 @@ python sports_main.py            # run réel (ESPN sans clé ; API-Sports si API
 ```
 Volume estimé : ~2-6 posts/jour en période chargée (1 par championnat ayant fini sa journée).
 
+### 7.4 Post Clôture des Marchés (`pipeline/markets/`)
+
+Flux **indépendant** : **un post par jour** récapitulant la clôture des grands indices
+boursiers + BTC + Or. Tourne via `markets_close.yml` à **21h30 UTC en semaine** (après la
+clôture de Wall Street). Arrive en `status='pending'` sur le site de planning.
+
+**Source de données** : **Yahoo Finance** (endpoint public `query1.finance.yahoo.com/v8/finance/chart/{symbol}`,
+**sans clé**). Couvre indices, crypto et matières premières d'un seul endpoint. Pour chaque
+symbole : `regularMarketPrice` (clôture) et `chartPreviousClose` → variation % du jour.
+
+**Indices suivis** (`INDICES` dans `markets_main.py`, ordre = affichage) :
+| Zone | Indices |
+|------|---------|
+| États-Unis | S&P 500 (`^GSPC`), Nasdaq (`^IXIC`), Dow Jones (`^DJI`) |
+| Europe | Stoxx 600 (`^STOXX`), CAC 40 (`^FCHI`), DAX (`^GDAXI`), FTSE 100 (`^FTSE`) |
+| Asie | Nikkei 225 (`^N225`), Hang Seng (`^HSI`), Shanghai (`000001.SS`) |
+| Crypto & Matières | Bitcoin (`BTC-USD`), Or once (`GC=F`) |
+
+> Ajouter/retirer un indice = éditer la liste `INDICES` (champ `section` = groupe d'affichage,
+> `decimals`/`prefix` pour le format). Aucun autre changement requis.
+
+**Fichiers** :
+- `markets_main.py` — `fetch_quote()` (Yahoo), `build_rows()`, anti-doublon Supabase
+  (`chart_type='markets'`, 1/jour), `_save_post()`, libellé de date FR.
+- `markets_renderer.py` — rendu PIL 1080×1080. **Réutilise la charte commune** des posts
+  sport (`_bg`, `_header`, `_footer`, polices) → look identique. Indices groupés par zone,
+  valeur de clôture (format FR `7 500,58`), variation **vert (hausse) / rouge (baisse)** avec
+  triangle ▲▼ dessiné en PIL (pas d'emoji).
+
+**Tester en local** :
+```bash
+cd pipeline/markets
+$env:PYTHONIOENCODING="utf-8"
+python markets_main.py    # run réel (Yahoo sans clé ; Supabase si SUPABASE_*)
+```
+
 ---
 
 ## 8. Base de données Supabase
@@ -597,6 +641,7 @@ python reprocess.py            # retraite les transcriptions collées (file Supa
 | ⏳ | **Déclencheur instantané du retraitement** | Edge Function Supabase : le bouton « Générer » lancerait `reprocess.yml` en quelques secondes (au lieu d'attendre le cron 15 min). Reporté — voir décision ci-dessous |
 | ✅ | **Posts Breaking News** | photo plein cadre 1080×1080, titre ALL CAPS, chiffres jaunes auto, Wikimedia → Unsplash → Pexels — FAIT (§7.1 / §7.2) |
 | ✅ | **Module résultats sportifs** | 1 post/championnat/jour quand tout est fini ; ESPN (CdM/Euro, sans clé) + API-Sports (ligues nat.) ; design scores + podium F1 avec portrait du vainqueur ; traduction FR clubs/pays — FAIT (§7.3) |
+| ✅ | **Post clôture des marchés** | 1 post/jour (lun-ven) : indices US/Europe/Asie + BTC + Or via Yahoo Finance (sans clé) ; valeurs FR + variation vert/rouge — FAIT (§7.4) |
 | ⏳ | **Portraits F1 : rotation complète** | curer 2-3 visages vérifiés par vainqueur récurrent (mécanisme `_PORTRAIT_FILES` déjà en place) + override Stroll/Bearman/Albon. Faible priorité (l'infobox couvre déjà les favoris) |
 | ⏳ | **Publication réseaux** (`poster/`) | X (tweepy), Instagram (Graph API), LinkedIn (Share API) après « Approuver » |
 | ⏳ | **Déduplication par URL exacte** | renfort du dédup sémantique existant |
