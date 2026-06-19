@@ -240,7 +240,7 @@ def make_movers_post(gainers: list[dict], losers: list[dict],
 
             y += ROW_H
 
-    _footer(draw, "MSCI WORLD · USD")
+    _footer(draw, "S&P 500 + ADR MONDE · USD")
 
     out = io.BytesIO()
     img.save(out, format="PNG", optimize=True)

@@ -99,6 +99,7 @@ media-auto/
 │   └── markets/           # MODULE marchés (flux indépendant) — voir §7.4 / §7.5
 │       ├── markets_main.py     # clôture des indices (1 post/jour, Yahoo Finance)
 │       ├── markets_extra.py    # Top/Flop actions (jour/semaine) + sentiment VIX/crypto
+│       ├── world_universe.py   # univers ~547 actions (S&P 500 + ADR monde, USD)
 │       └── markets_renderer.py # rendus PIL (clôture, top/flop, sentiment)
 ├── docs/                  # SITE de planning (GitHub Pages) : index.html, app.js, style.css
 ├── poster/                # publication réseaux (phase ultérieure)
@@ -487,13 +488,19 @@ Trois posts supplémentaires, **dispatchés selon le jour** par un seul script
 | **Samedi** (10h UTC) | **Top / Flop de la semaine** | variation ~5 séances (historique Yahoo `range=1mo`) |
 | **Dimanche** (16h UTC) | **Sentiment des marchés** | **VIX** (`^VIX`) + **Fear & Greed crypto** (alternative.me) |
 
-**Fiabilité = univers curaté en USD.** Plutôt qu'un *screener* instable, `WORLD_STOCKS`
-(`markets_extra.py`) liste ~58 grandes capitalisations du **MSCI World** (marchés
-développés) dont on classe la variation → top 5 hausses + top 5 baisses. **Tous les
-tickers sont cotés en USD** (ADR américains pour les sociétés étrangères : `NVO`, `ASML`,
-`TM`, `NSRGY`, `SHEL`, `LVMUY`…) → **une seule devise, même séance de cotation, aucun
-problème de change**. Marchés émergents exclus (TSMC/Samsung/Alibaba ≠ MSCI World).
-Chaque cours vient du endpoint `v8/chart` éprouvé (sans clé).
+**Vrai Top/Flop = univers LARGE scanné en entier.** Le top/flop du jour, ce sont les
+plus grosses variations — quasi jamais des méga-caps (qui bougent peu). On scanne donc
+**tout l'univers** `UNIVERSE` (`world_universe.py`) : **S&P 500 (503) + ~44 grandes
+valeurs internationales** (ADR), soit **~547 actions**, puis on classe par variation
+→ vrais top 5 hausses + top 5 baisses (souvent ±10-45 %).
+- **Tous cotés en USD** (ADR US pour les étrangères : `NVO`, `ASML`, `TM`, `SHEL`…)
+  → une seule devise, même séance, **aucun problème de change**.
+- **Récupération concurrente** (`ThreadPoolExecutor`, 16 threads) → ~547 cours en ~6 s
+  via le endpoint `v8/chart` éprouvé (sans clé). Aucun rate-limit observé.
+- Garde-fous : variation `|chg| > 60 %` ignorée (anomalie de données) ; dédoublonnage
+  par nom (Fox A/B, Alphabet A/C).
+- `world_universe.py` est généré depuis la liste publique des constituants du S&P 500
+  (datasets/s-and-p-500-companies) + un bloc d'ADR internationaux liquides.
 
 **Sentiment (dimanche)** — deux panneaux avec jauge colorée + curseur :
 - **Bourse · VIX** : <15 Calme · 15-20 Normal · 20-30 Nervosité · >30 Panique (échelle 0-40).

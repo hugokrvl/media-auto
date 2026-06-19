@@ -35,31 +35,12 @@ def _date_label() -> str:
     return f"{_JOURS[d.weekday()].capitalize()} {d.day} {_MOIS[d.month]} {d.year}"
 
 
-# ── Univers : grandes capitalisations du MSCI World (marchés développés) ────────
-# TOUS les tickers sont cotés en USD (ADR américains pour les sociétés étrangères)
-# → une seule devise, même séance de cotation : aucun problème de change.
-# MSCI World = marchés développés uniquement → pas de TSMC/Samsung/Alibaba (émergents).
-# (nom affiché, symbole Yahoo en USD)
-WORLD_STOCKS = [
-    # États-Unis
-    ("Apple", "AAPL"), ("Microsoft", "MSFT"), ("Nvidia", "NVDA"), ("Amazon", "AMZN"),
-    ("Alphabet", "GOOGL"), ("Meta", "META"), ("Broadcom", "AVGO"), ("Tesla", "TSLA"),
-    ("Eli Lilly", "LLY"), ("JPMorgan", "JPM"), ("Visa", "V"), ("UnitedHealth", "UNH"),
-    ("Exxon", "XOM"), ("Mastercard", "MA"), ("Costco", "COST"), ("J&J", "JNJ"),
-    ("Home Depot", "HD"), ("P&G", "PG"), ("Walmart", "WMT"), ("Netflix", "NFLX"),
-    ("Oracle", "ORCL"), ("AbbVie", "ABBV"), ("Coca-Cola", "KO"), ("AMD", "AMD"),
-    ("Chevron", "CVX"), ("Salesforce", "CRM"), ("Merck", "MRK"), ("PepsiCo", "PEP"),
-    ("Adobe", "ADBE"), ("McDonald's", "MCD"), ("Disney", "DIS"), ("Caterpillar", "CAT"),
-    ("Boeing", "BA"),
-    # Reste du MSCI World, via ADR cotés en USD
-    ("Novo Nordisk", "NVO"), ("ASML", "ASML"), ("SAP", "SAP"), ("Toyota", "TM"),
-    ("Nestlé", "NSRGY"), ("Novartis", "NVS"), ("Roche", "RHHBY"), ("Shell", "SHEL"),
-    ("AstraZeneca", "AZN"), ("HSBC", "HSBC"), ("Unilever", "UL"), ("LVMH", "LVMUY"),
-    ("TotalEnergies", "TTE"), ("Sanofi", "SNY"), ("Sony", "SONY"),
-    ("Mitsubishi UFJ", "MUFG"), ("Honda", "HMC"), ("GSK", "GSK"), ("BP", "BP"),
-    ("Diageo", "DEO"), ("Rio Tinto", "RIO"), ("BHP", "BHP"), ("UBS", "UBS"),
-    ("Siemens", "SIEGY"), ("Deutsche Bank", "DB"),
-]
+# ── Univers d'actions : large = vrai Top/Flop du jour ──────────────────────────
+# S&P 500 (503) + grandes valeurs internationales (44 ADR), TOUTES cotées en USD
+# → une seule devise, même séance, aucun problème de change. Voir world_universe.py.
+# On scanne TOUT l'univers et on classe par variation : ce sont les VRAIS plus gros
+# mouvements du jour (souvent ±10-15 %), pas les méga-caps (qui bougent peu).
+from world_universe import UNIVERSE
 
 
 def _yahoo(symbol: str, rng: str = "1d", interval: str = "1d") -> dict | None:
@@ -102,20 +83,40 @@ def _week_change(symbol: str):
     return None
 
 
-def _movers(weekly: bool):
-    """Retourne (gainers, losers) triés, top 5 chacun."""
+def _movers(weekly: bool, top: int = 5):
+    """Scanne tout l'univers en parallèle et retourne (gainers, losers) — vrai Top/Flop."""
+    from concurrent.futures import ThreadPoolExecutor
     fn = _week_change if weekly else _day_change
-    rows = []
-    for name, sym in WORLD_STOCKS:
+
+    def fetch(sym):
         r = fn(sym)
-        if r:
-            price, chg, cur = r
-            dec = 0 if price >= 1000 else 2
-            rows.append({"name": name, "price": price, "change": chg,
-                         "currency": cur, "decimals": dec})
-        time.sleep(0.05)
+        if not r:
+            return None
+        price, chg, cur = r
+        if abs(chg) > 60:          # garde-fou : variation absurde = anomalie de données
+            return None
+        return {"name": UNIVERSE[sym], "price": price, "change": chg,
+                "currency": cur, "decimals": 0 if price >= 1000 else 2}
+
+    rows = []
+    with ThreadPoolExecutor(max_workers=16) as ex:
+        for r in ex.map(fetch, list(UNIVERSE.keys())):
+            if r:
+                rows.append(r)
     rows.sort(key=lambda x: -x["change"])
-    return rows[:5], rows[-5:][::-1]
+
+    def pick(seq):
+        out, seen = [], set()
+        for r in seq:                 # dédoublonne les doubles catégories (Fox A/B, Google A/C)
+            if r["name"] in seen:
+                continue
+            seen.add(r["name"])
+            out.append(r)
+            if len(out) >= top:
+                break
+        return out
+
+    return pick(rows), pick(reversed(rows))
 
 
 # ── Sentiment : VIX + Fear & Greed crypto ──────────────────────────────────────
