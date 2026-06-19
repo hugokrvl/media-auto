@@ -15,7 +15,7 @@ avec **validation humaine** avant publication. Tourne chaque nuit à 1h (Paris) 
 4. [Limites Groq & architecture 2 modèles](#4-limites-groq--architecture-2-modèles)
 5. [Sources (RSS · YouTube · Email)](#5-sources--pipelinesourcespy)
 6. [Dédup intelligent](#6-dédup-intelligent--pipelinededuppy)
-7. [Identité visuelle HK Média](#7-identité-visuelle--charte-hk-média)
+7. [Identité visuelle HK Média](#7-identité-visuelle--charte-hk-média) (dataviz + Breaking News + images libres)
 8. [Base de données Supabase](#8-base-de-données-supabase)
 9. [Site de planning](#9-site-de-planning-docs--github-pages)
 10. [Variables d'environnement / secrets](#10-variables-denvironnement--secrets)
@@ -303,6 +303,60 @@ Direction artistique : **« Data punch » éditorial** · serif fort · jaune mo
   - Format **carré 1080×1080** universel (3 réseaux). Portrait/paysage = layouts dédiés (plus tard).
 - Tester le rendu : `python dataviz.py` (→ `test_*.png`). Planche-contact : `python gallery.py`.
 
+### 7.1 Posts Breaking News (`pipeline/breaking.py`)
+
+Posts photo plein cadre pour les articles **score ≥ 8 + vérifiés**, maximum **2/nuit**.
+Générés après les dataviz dans `main.py`, stockés avec `chart_type="breaking"`.
+
+**Design** :
+- Photo 1080×1080 (recadrage centre + légère désaturation pour faire ressortir le texte)
+- Gradient noir de 30 % à 100 % (alpha progressif)
+- Cadre jaune moutarde (`_MUSTARD`, 16 px)
+- Badges haut gauche : **catégorie** (couleur par cat.) + **BREAKING** (rouge)
+- Monogramme **HK** (cercle moutarde, Anton 36 px) haut droite
+- Titre **ALL CAPS Anton blanc**, chiffres/€/% automatiquement en **jaune moutarde** (regex `_NUM_RE`)
+- Ombre portée 4 px sur le titre
+- Séparateur moutarde + footer `DÉCRYPTAGE EN DESCRIPTION` / `@HK.MÉDIA`
+
+**Taille de police adaptative** (selon longueur du titre) :
+| Police | Wrap | Quand |
+|--------|------|-------|
+| 88 px | 18 car./ligne | ≤ 2 lignes |
+| 76 px | 20 car./ligne | ≤ 3 lignes |
+| 64 px | 23 car./ligne | ≤ 4 lignes |
+| 54 px | 26 car./ligne | fallback |
+
+Titre tronqué à **80 caractères** max (coupe au dernier mot entier + `…`) pour rester percutant.
+
+### 7.2 Recherche d'images libres de droits (`pipeline/image_fetch.py`)
+
+Cascade par ordre de priorité :
+
+1. **Wikimedia Commons** (sans clé API) — photos éditoriales réelles : hommes politiques,
+   villes, bâtiments, marques, événements. Licence CC-BY-SA / domaine public.
+   - Cascade de requêtes du plus spécifique au plus large :
+     1. Noms propres extraits du titre (ex : `"Poutine Moscou"`, `"Decathlon"`)
+     2. Requête complète traduite FR→EN
+     3. 2 premiers mots-clés
+   - Filtres anti-bruit : exclut `.svg`, cartes, drapeaux, logos, screenshots, icônes
+     (liste `_WIKI_SKIP`) + largeur minimum 400 px.
+   - Miniature redimensionnée à **1080 px** via l'API `iiurlwidth`.
+
+2. **Unsplash** (`UNSPLASH_ACCESS_KEY`) — photos créatives haute qualité, licence libre commerciale.
+   Utilise la clé **Access Key** (pas la Secret Key) avec header `Client-ID`.
+
+3. **Pexels** (`PEXELS_API_KEY`) — fallback final, photos libres de droits.
+
+**Traduction FR→EN** : dictionnaire `_TRANSLATE` dans `image_fetch.py` (canicule→heatwave,
+guerre→war, taux directeur→key interest rate, ukraine→ukraine, etc.) pour que la recherche
+Wikimedia/Unsplash/Pexels trouve des résultats pertinents depuis des titres en français.
+
+**Mots à ne pas utiliser comme contexte catégorie** (`_CAT_CONTEXT`) :
+- `general` → pas d'ancrage (les mots du titre suffisent)
+- `finance` → `"finance economy"`, `tech` → `"technology digital"`, `sport` → `"sport athlete"`
+
+Tester : `python _test_wikimedia.py` (génère des Breaking News avec images Wikimedia en local).
+
 ---
 
 ## 8. Base de données Supabase
@@ -470,6 +524,7 @@ python reprocess.py            # retraite les transcriptions collées (file Supa
 | ✅ | **Copier-coller transcription sur le site** | post « transcription manquante » → collage → workflow `reprocess.yml` (digest + 70b + image + caption) — FAIT (§9.1) |
 | ⏳ | **Transcription YouTube par Whisper** | télécharger l'audio (`yt-dlp`) → Groq `whisper-large-v3` (28 800 s/jour gratuits). Risque : téléchargement audio bloqué sur IP cloud. Automatiserait ce que le collage fait à la main |
 | ⏳ | **Déclencheur instantané du retraitement** | Edge Function Supabase : le bouton « Générer » lancerait `reprocess.yml` en quelques secondes (au lieu d'attendre le cron 15 min). Reporté — voir décision ci-dessous |
+| ✅ | **Posts Breaking News** | photo plein cadre 1080×1080, titre ALL CAPS, chiffres jaunes auto, Wikimedia → Unsplash → Pexels — FAIT (§7.1 / §7.2) |
 | ⏳ | **Publication réseaux** (`poster/`) | X (tweepy), Instagram (Graph API), LinkedIn (Share API) après « Approuver » |
 | ⏳ | **Déduplication par URL exacte** | renfort du dédup sémantique existant |
 | ⏳ | **Formats portrait/paysage** | layouts dédiés (story 9:16) en plus du carré |

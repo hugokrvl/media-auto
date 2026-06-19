@@ -110,19 +110,23 @@ _WIKI_SKIP = {"map", "flag", "logo", "icon", "diagram", "chart", "coat",
               "wikipedia", "wikimedia", "commons"}
 
 
-def _fetch_wikimedia(query: str) -> str | None:
+def _fetch_wikimedia(query: str, prefer_name: str | None = None) -> str | None:
     """
     Cherche une photo sur Wikimedia Commons (sans clé API).
-    Retourne une URL d'image redimensionnée à 1080px ou None.
-    Idéal pour les personnalités politiques, villes, événements historiques.
+    prefer_name : mot-clé à prioriser dans le nom de fichier (ex: "mbappe", "macron")
+                  → les fichiers dont le nom contient ce mot passent en tête,
+                    ce qui favorise un portrait individuel plutôt qu'une photo de groupe.
     """
-    # Étape 1 : recherche de fichiers correspondant à la requête
+    import unicodedata
+    def _norm(s: str) -> str:
+        return unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode().lower()
+
     search_params = urllib.parse.urlencode({
         "action": "query",
         "list": "search",
         "srsearch": query,
-        "srnamespace": "6",   # namespace File
-        "srlimit": "20",
+        "srnamespace": "6",
+        "srlimit": "25",
         "format": "json",
     })
     req = urllib.request.Request(
@@ -136,28 +140,35 @@ def _fetch_wikimedia(query: str) -> str | None:
         if not results:
             return None
 
-        # Filtrer : garder seulement les vraies photos (pas SVG, maps, logos)
-        candidates = []
+        prefer_norm = _norm(prefer_name) if prefer_name else None
+
+        # Sépare les candidats en deux listes : portrait individuel vs groupe/autre
+        candidates_prio = []
+        candidates_rest = []
         for item in results:
             title = item.get("title", "")
             tl = title.lower()
+            tl_norm = _norm(title)
             ext = next((e for e in _PHOTO_EXT if tl.endswith(e)), None)
             if not ext:
                 continue
             if any(skip in tl for skip in _WIKI_SKIP):
                 continue
-            candidates.append(title)
-            if len(candidates) >= 5:
+            if prefer_norm and prefer_norm in tl_norm:
+                candidates_prio.append(title)
+            else:
+                candidates_rest.append(title)
+            if len(candidates_prio) + len(candidates_rest) >= 8:
                 break
 
+        # Portraits nommés en tête, reste ensuite → max 3 à interroger
+        candidates = (candidates_prio + candidates_rest)[:3]
         if not candidates:
             return None
 
-        # Étape 2 : récupérer l'URL de miniature (1080px) du meilleur candidat
-        titles_param = "|".join(candidates[:3])
         info_params = urllib.parse.urlencode({
             "action": "query",
-            "titles": titles_param,
+            "titles": "|".join(candidates),
             "prop": "imageinfo",
             "iiprop": "url|mime|size",
             "iiurlwidth": "1080",
@@ -170,14 +181,17 @@ def _fetch_wikimedia(query: str) -> str | None:
         with urllib.request.urlopen(req2, timeout=10) as r:
             info = json.loads(r.read())
 
-        pages = info.get("query", {}).get("pages", {}).values()
+        # Trier les pages : portraits nommés en premier
+        pages = list(info.get("query", {}).get("pages", {}).values())
+        if prefer_norm:
+            pages.sort(key=lambda p: 0 if prefer_norm in _norm(p.get("title", "")) else 1)
+
         for page in pages:
             ii = page.get("imageinfo", [{}])[0]
             mime = ii.get("mime", "")
             if not mime.startswith("image/") or mime == "image/svg+xml":
                 continue
-            w = ii.get("width", 0)
-            if w < 400:   # trop petite
+            if ii.get("width", 0) < 400:
                 continue
             url = ii.get("thumburl") or ii.get("url")
             if url:
@@ -245,41 +259,45 @@ def _fetch_pexels(query: str) -> str | None:
 
 def _wikimedia_cascade(article: dict) -> str | None:
     """
-    Essaie plusieurs requêtes Wikimedia de plus en plus larges.
-    On cherche d'abord les noms propres (personnes, lieux, marques),
-    puis on élargit vers le sujet général.
+    Cascade Wikimedia du plus spécifique au plus large.
+    Pour les personnalités (sportifs, politiques, PDGs…), on tente d'abord
+    un portrait individuel en passant le nom propre comme filtre prefer_name.
     """
-    title = (article.get("title_fr") or article.get("title", "")).lower()
     import unicodedata
+    def _norm(s: str) -> str:
+        return unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode().lower()
 
-    # Entités nommées détectées dans le titre (mots à initiale majuscule d'origine)
     title_orig = (article.get("title_fr") or article.get("title", ""))
     proper = [w for w in re.findall(r'\b[A-ZÀ-Ÿ][a-zà-ÿA-ZÀ-Ÿ]{2,}\b', title_orig)
               if w.lower() not in _STOP and len(w) > 2]
 
-    # Construire une liste de requêtes candidates (du plus spécifique au plus large)
-    queries = []
-
-    # 1. Noms propres les plus importants (ex: "Putin Moscow", "Decathlon", "OpenAI")
-    if len(proper) >= 2:
-        queries.append(" ".join(proper[:2]))
-    if proper:
-        queries.append(proper[0])
-
-    # 2. Requête complète traduite
     full_query = _keywords(article)
-    if full_query not in queries:
-        queries.append(full_query)
 
-    # 3. Mots-clés raccourcis (2 premiers mots significatifs)
+    # Cascade : chaque entrée = (requête_wikimedia, prefer_name_pour_filtre_fichier)
+    queries: list[tuple[str, str | None]] = []
+
+    if proper:
+        # 1. Portrait individuel : nom seul + "portrait" → filtre sur le nom dans le fichier
+        queries.append((f"{proper[0]} portrait", _norm(proper[0])))
+        # 2. Nom seul (sans "portrait") — au cas où peu de portraits dispo
+        queries.append((proper[0], _norm(proper[0])))
+        # 3. Deux noms propres ensemble (ex: "Poutine Moscou", "Mbappé France")
+        if len(proper) >= 2:
+            queries.append((" ".join(proper[:2]), _norm(proper[0])))
+
+    # 4. Requête complète traduite (sans filtre par nom)
+    if full_query not in [q for q, _ in queries]:
+        queries.append((full_query, None))
+
+    # 5. Deux premiers mots-clés (fallback large)
     short = " ".join(full_query.split()[:2])
-    if short and short not in queries:
-        queries.append(short)
+    if short and short not in [q for q, _ in queries]:
+        queries.append((short, None))
 
-    for q in queries:
+    for q, prefer in queries:
         if not q or len(q) < 3:
             continue
-        url = _fetch_wikimedia(q)
+        url = _fetch_wikimedia(q, prefer_name=prefer)
         if url:
             return url
     return None
