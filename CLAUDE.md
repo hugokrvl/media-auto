@@ -51,6 +51,10 @@ GitHub Actions (cron 30 min, 17h→02h UTC)  ← 3e entrée, indépendante
 GitHub Actions (cron 21h30 UTC, lun-ven)  ← 4e entrée, indépendante
   → pipeline/markets/markets_main.py  clôture des marchés : 1 post/jour
                            (indices + BTC + Or via Yahoo Finance) — voir §7.4
+
+GitHub Actions (cron lun-ven / sam / dim)  ← 5e entrée, indépendante
+  → pipeline/markets/markets_extra.py  Top/Flop actions (jour/semaine)
+                           + sentiment VIX & crypto le dimanche — voir §7.5
 ```
 
 Le pipeline **génère et stocke** les posts en statut `pending`. Rien n'est publié
@@ -66,7 +70,8 @@ media-auto/
 │   ├── daily_scan.yml     # cron nocturne (pipeline complet) + workflow_dispatch
 │   ├── reprocess.yml      # retraitement transcriptions collées (toutes les 15 min)
 │   ├── sports_results.yml # résultats sportifs (toutes les 30 min, 17h→02h UTC) — voir §7.3
-│   └── markets_close.yml  # clôture des marchés (21h30 UTC, lun-ven) — voir §7.4
+│   ├── markets_close.yml  # clôture des marchés (21h30 UTC, lun-ven) — voir §7.4
+│   └── markets_extra.yml  # Top/Flop actions + sentiment (lun-ven/sam/dim) — voir §7.5
 ├── pipeline/
 │   ├── main.py            # orchestrateur (boucle, dédup, max 7 posts/nuit)
 │   ├── reprocess.py       # regénère un post depuis une transcription collée
@@ -91,9 +96,10 @@ media-auto/
 │   │   ├── api_client.py      # client API-Sports (foot/basket/F1/rugby) + ESPN (sans clé)
 │   │   ├── leagues.py         # config championnats suivis + saisons courantes
 │   │   └── scores_renderer.py # rendu PIL des posts scores + podium F1 (+ portrait vainqueur)
-│   └── markets/           # MODULE clôture des marchés (flux indépendant) — voir §7.4
-│       ├── markets_main.py     # orchestrateur (1 post/jour, données Yahoo Finance)
-│       └── markets_renderer.py # rendu PIL (indices groupés, variation vert/rouge)
+│   └── markets/           # MODULE marchés (flux indépendant) — voir §7.4 / §7.5
+│       ├── markets_main.py     # clôture des indices (1 post/jour, Yahoo Finance)
+│       ├── markets_extra.py    # Top/Flop actions (jour/semaine) + sentiment VIX/crypto
+│       └── markets_renderer.py # rendus PIL (clôture, top/flop, sentiment)
 ├── docs/                  # SITE de planning (GitHub Pages) : index.html, app.js, style.css
 ├── poster/                # publication réseaux (phase ultérieure)
 ├── requirements.txt
@@ -470,6 +476,38 @@ $env:PYTHONIOENCODING="utf-8"
 python markets_main.py    # run réel (Yahoo sans clé ; Supabase si SUPABASE_*)
 ```
 
+### 7.5 Posts marchés étendus — Top/Flop & Sentiment (`pipeline/markets/markets_extra.py`)
+
+Trois posts supplémentaires, **dispatchés selon le jour** par un seul script
+(`markets_extra.py`, workflow `markets_extra.yml`) — `main()` lit `date.weekday()` :
+
+| Jour | Post | Donnée |
+|------|------|--------|
+| **Lun-Ven** (21h40 UTC) | **Top / Flop du jour** | variation du jour des actions de l'univers |
+| **Samedi** (10h UTC) | **Top / Flop de la semaine** | variation ~5 séances (historique Yahoo `range=1mo`) |
+| **Dimanche** (16h UTC) | **Sentiment des marchés** | **VIX** (`^VIX`) + **Fear & Greed crypto** (alternative.me) |
+
+**Fiabilité = univers curaté.** Plutôt qu'un *screener* instable, `WORLD_STOCKS`
+(`markets_extra.py`) liste ~40 grandes capitalisations mondiales (US / Europe / Asie)
+dont on classe la variation → top 5 hausses + top 5 baisses. Chaque cours vient du
+endpoint `v8/chart` éprouvé (sans clé). Devises multiples gérées (`$ € £ ¥ ₩…`).
+
+**Sentiment (dimanche)** — deux panneaux avec jauge colorée + curseur :
+- **Bourse · VIX** : <15 Calme · 15-20 Normal · 20-30 Nervosité · >30 Panique (échelle 0-40).
+- **Crypto · Fear & Greed** : 0-24 Peur extrême · …· 75-100 Avidité extrême (échelle 0-100).
+- Sources sans clé : VIX via Yahoo, indice crypto via `api.alternative.me/fng/`.
+
+**Rendus** (`markets_renderer.py`) : `make_movers_post()` (2 sections hausses/baisses,
+variation en gros coloré + triangle) et `make_sentiment_post()` (2 panneaux + jauges
+segmentées dessinées en PIL). Même charte que la clôture (§7.4).
+
+**Tester en local** :
+```bash
+cd pipeline/markets
+$env:PYTHONIOENCODING="utf-8"
+python markets_extra.py   # choisit automatiquement le post selon le jour courant
+```
+
 ---
 
 ## 8. Base de données Supabase
@@ -642,6 +680,7 @@ python reprocess.py            # retraite les transcriptions collées (file Supa
 | ✅ | **Posts Breaking News** | photo plein cadre 1080×1080, titre ALL CAPS, chiffres jaunes auto, Wikimedia → Unsplash → Pexels — FAIT (§7.1 / §7.2) |
 | ✅ | **Module résultats sportifs** | 1 post/championnat/jour quand tout est fini ; ESPN (CdM/Euro, sans clé) + API-Sports (ligues nat.) ; design scores + podium F1 avec portrait du vainqueur ; traduction FR clubs/pays — FAIT (§7.3) |
 | ✅ | **Post clôture des marchés** | 1 post/jour (lun-ven) : indices US/Europe/Asie + BTC + Or via Yahoo Finance (sans clé) ; valeurs FR + variation vert/rouge — FAIT (§7.4) |
+| ✅ | **Top/Flop actions + sentiment** | Top/Flop actions mondiales du jour (lun-ven) et de la semaine (sam) ; sentiment VIX + Fear & Greed crypto (dim) — univers curaté fiable — FAIT (§7.5) |
 | ⏳ | **Portraits F1 : rotation complète** | curer 2-3 visages vérifiés par vainqueur récurrent (mécanisme `_PORTRAIT_FILES` déjà en place) + override Stroll/Bearman/Albon. Faible priorité (l'infobox couvre déjà les favoris) |
 | ⏳ | **Publication réseaux** (`poster/`) | X (tweepy), Instagram (Graph API), LinkedIn (Share API) après « Approuver » |
 | ⏳ | **Déduplication par URL exacte** | renfort du dédup sémantique existant |

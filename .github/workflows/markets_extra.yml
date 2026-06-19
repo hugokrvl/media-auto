@@ -1,0 +1,38 @@
+name: MediaAuto — Marchés (Top/Flop & Sentiment)
+
+on:
+  schedule:
+    # Lun-Ven 21h40 UTC : Top/Flop des actions mondiales DU JOUR (après clôture US)
+    - cron: "40 21 * * 1-5"
+    # Samedi 10h00 UTC : Top/Flop DE LA SEMAINE
+    - cron: "0 10 * * 6"
+    # Dimanche 16h00 UTC : Sentiment marché (VIX + Fear & Greed crypto)
+    - cron: "0 16 * * 0"
+  workflow_dispatch:   # déclenchement manuel (le script choisit selon le jour)
+
+jobs:
+  markets-extra:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run markets extra
+        env:
+          SUPABASE_URL:  ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY:  ${{ secrets.SUPABASE_KEY }}
+          NTFY_TOPIC:    ${{ secrets.NTFY_TOPIC }}
+        run: |
+          cd pipeline/markets
+          python markets_extra.py
