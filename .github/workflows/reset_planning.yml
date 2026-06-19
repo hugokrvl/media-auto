@@ -1,0 +1,40 @@
+name: MediaAuto — Reset Planning (vider la base)
+
+# Déclenchement MANUEL uniquement. Vide la table posts (planning à zéro).
+# Pour lancer : onglet Actions → "Reset Planning" → Run workflow → taper RESET.
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Taper RESET pour confirmer la suppression de TOUS les posts'
+        required: true
+        default: ''
+
+jobs:
+  reset:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # Double garde-fou : le job ne tourne que si l'utilisateur a tapé exactement RESET
+    if: ${{ github.event.inputs.confirm == 'RESET' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Reset posts table
+        env:
+          SUPABASE_URL:  ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY:  ${{ secrets.SUPABASE_KEY }}
+          RESET_CONFIRM: ${{ github.event.inputs.confirm }}
+        run: |
+          cd pipeline
+          python reset_posts.py
