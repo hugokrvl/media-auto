@@ -18,6 +18,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import api_client as _api
 from leagues import (
     FOOTBALL_LEAGUES, BASKETBALL_LEAGUES, RUGBY_LEAGUES,
+    ESPN_COMPETITIONS,
     CURRENT_SEASON_FOOTBALL, CURRENT_SEASON_BASKETBALL,
     CURRENT_SEASON_F1, CURRENT_SEASON_RUGBY,
     F1_CONFIG,
@@ -184,16 +185,44 @@ def run_rugby() -> None:
             print(f"[RUGBY] {name} erreur : {e}")
 
 
-def main():
-    if not _api.API_KEY:
-        print("❌ API_SPORTS_KEY manquante — arrêt")
-        sys.exit(1)
+def run_espn() -> None:
+    """Compétitions internationales via ESPN (sans clé) : Coupe du Monde, Euro, Copa."""
+    for comp in ESPN_COMPETITIONS:
+        slug = comp["slug"]
+        name = comp["name"]
+        try:
+            fixtures = _api.get_espn_scores(slug)
+            if not fixtures:
+                continue
+            if not _api.espn_all_finished(fixtures):
+                print(f"[ESPN] {name} : {len(fixtures)} matchs, pas encore terminés")
+                continue
+            if _already_posted(name, TODAY):
+                print(f"[ESPN] {name} : déjà posté aujourd'hui")
+                continue
+            print(f"[ESPN] {name} : {len(fixtures)} matchs terminés → génération post")
+            img = make_football_scores(fixtures, comp)
+            _save_scores_post(name, img, TODAY)
+            notifier.send(f"⚽ Résultats {name} publiés ({len(fixtures)} matchs)")
+        except Exception as e:
+            print(f"[ESPN] {name} erreur : {e}")
 
+
+def main():
     print(f"=== SPORTS RESULTS · {TODAY} ===")
-    run_football()
-    run_basketball()
-    run_f1()
-    run_rugby()
+
+    # ESPN en premier (Coupe du Monde, Euro…) — sans clé, toujours disponible
+    run_espn()
+
+    # API-Sports (championnats nationaux) — nécessite API_SPORTS_KEY
+    if _api.API_KEY:
+        run_football()
+        run_basketball()
+        run_f1()
+        run_rugby()
+    else:
+        print("⚠️  API_SPORTS_KEY absente — championnats nationaux ignorés")
+
     print("=== FIN ===")
 
 

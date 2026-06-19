@@ -135,3 +135,70 @@ def today_str() -> str:
 
 def yesterday_str() -> str:
     return (date.today() - timedelta(days=1)).isoformat()
+
+
+# ── ESPN (sans clé — Coupe du Monde + compétitions internationales) ────────────
+
+_ESPN_SLUGS = {
+    "fifa.world":     "Coupe du Monde",
+    "uefa.euro":      "Euro",
+    "conmebol.copa":  "Copa América",
+}
+
+_ESPN_BASE = "https://site.api.espn.com/apis/site/v2/sports/soccer"
+
+
+def get_espn_scores(slug: str) -> list[dict]:
+    """
+    Récupère les matchs du jour via l'API publique ESPN (sans clé).
+    slug : ex. "fifa.world", "uefa.euro"
+    Retourne une liste de matchs au même format que get_football_fixtures().
+    """
+    url = f"{_ESPN_BASE}/{slug}/scoreboard"
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (compatible; HKMedia/1.0)"})
+    try:
+        with urllib.request.urlopen(req, timeout=10) as r:
+            data = json.loads(r.read())
+    except Exception as e:
+        print(f"[ESPN] Erreur ({slug}): {e}")
+        return []
+
+    fixtures = []
+    for event in data.get("events", []):
+        comp   = event.get("competitions", [{}])[0]
+        teams  = comp.get("competitors", [])
+        if len(teams) < 2:
+            continue
+        status = comp.get("status", {}).get("type", {})
+        short  = "FT" if status.get("completed") else (
+                 "1H" if "1st" in status.get("description", "").lower() else
+                 "2H" if "2nd" in status.get("description", "").lower() else
+                 "NS")
+        home = teams[0]
+        away = teams[1]
+        fixtures.append({
+            "teams": {
+                "home": {
+                    "name": home.get("team", {}).get("displayName", ""),
+                    "logo": home.get("team", {}).get("logo", ""),
+                },
+                "away": {
+                    "name": away.get("team", {}).get("displayName", ""),
+                    "logo": away.get("team", {}).get("logo", ""),
+                },
+            },
+            "goals": {
+                "home": int(home.get("score", 0)) if status.get("completed") or short in ("1H","2H") else None,
+                "away": int(away.get("score", 0)) if status.get("completed") or short in ("1H","2H") else None,
+            },
+            "fixture": {"status": {"short": short}},
+        })
+    return fixtures
+
+
+def espn_all_finished(fixtures: list[dict]) -> bool:
+    finished = {"FT", "AET", "PEN", "CANC", "PST"}
+    return bool(fixtures) and all(
+        f.get("fixture", {}).get("status", {}).get("short", "") in finished
+        for f in fixtures
+    )
