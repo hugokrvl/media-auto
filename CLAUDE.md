@@ -12,10 +12,10 @@ avec **validation humaine** avant publication. Tourne chaque nuit à 1h (Paris) 
 1. [Architecture & flux](#1-architecture--flux)
 2. [Structure du dépôt](#2-structure-du-dépôt)
 3. [Services & comptes](#3-services--comptes-tous-gratuits)
-4. [Limites Groq & architecture 2 modèles](#4-limites-groq--architecture-2-modèles)
+4. [Limites Groq & architecture 2 modèles](#4-limites-groq--architecture-2-modèles) (+ **stack IA qualité Mistral/Gemini §4.1**)
 5. [Sources (RSS · YouTube · Email)](#5-sources--pipelinesourcespy)
 6. [Dédup intelligent](#6-dédup-intelligent--pipelinededuppy)
-7. [Identité visuelle HK Média](#7-identité-visuelle--charte-hk-média) (dataviz + Breaking News + images libres + **résultats sportifs §7.3**)
+7. [Identité visuelle HK Média](#7-identité-visuelle--charte-hk-média) (dataviz · Breaking · images · sport §7.3 · marchés §7.4-5 · **moteur breaking temps réel §7.6**)
 8. [Base de données Supabase](#8-base-de-données-supabase)
 9. [Site de planning](#9-site-de-planning-docs--github-pages)
 10. [Variables d'environnement / secrets](#10-variables-denvironnement--secrets)
@@ -79,7 +79,9 @@ media-auto/
 │   ├── reprocess.yml      # retraitement transcriptions collées (toutes les 15 min)
 │   ├── sports_results.yml # résultats sportifs (toutes les 30 min, 17h→02h UTC) — voir §7.3
 │   ├── markets_close.yml  # clôture des marchés (21h30 UTC, lun-ven) — voir §7.4
-│   └── markets_extra.yml  # Top/Flop actions + sentiment (lun-ven/sam/dim) — voir §7.5
+│   ├── markets_extra.yml  # Top/Flop actions + sentiment (lun-ven/sam/dim) — voir §7.5
+│   ├── breaking_scan.yml  # BREAKING temps réel (déclenché par cron-job.org /30min) — voir §7.6
+│   └── reset_planning.yml # OUTIL manuel : vider la table posts (saisie "RESET")
 ├── pipeline/
 │   ├── main.py            # orchestrateur (boucle, dédup, max 7 posts/nuit)
 │   ├── reprocess.py       # regénère un post depuis une transcription collée
@@ -91,7 +93,15 @@ media-auto/
 │   ├── dedup.py           # doublon vs mise à jour (empreintes sujet + données)
 │   ├── dataviz.py         # moteur d'infographies HK (5 types)
 │   ├── brand.py           # charte : couleurs, polices, helpers (fr(), variations())
-│   ├── generator.py       # Groq : captions FR adaptées par réseau
+│   ├── breaking.py        # rendu post photo plein cadre (titre + chiffres jaunes) — §7.1
+│   ├── montage.py         # rendu MONTAGE de 2-4 vrais portraits (ex: patrons IA) — §7.6
+│   ├── image_fetch.py     # recherche d'images (Wikipédia infobox → Unsplash) — §7.2
+│   ├── llm.py             # sélecteur IA qualité : Mistral → Gemini → (repli Groq) — §4
+│   ├── mistral.py         # client REST Mistral (free tier) — §4
+│   ├── gemini.py          # client REST Gemini (free tier) — §4
+│   ├── breaking_scan.py   # MOTEUR breaking temps réel (RSS→IA→photo/montage) — §7.6
+│   ├── reset_posts.py     # OUTIL : vide la table posts (garde-fou RESET_CONFIRM)
+│   ├── generator.py       # captions FR par réseau (Mistral/Gemini, repli Groq)
 │   ├── storage.py         # client Supabase (insert post + upload image + historique)
 │   ├── notifier.py        # ntfy push
 │   ├── _fonts/            # polices OFL bundlées (DM Serif Display, Anton, Barlow)
@@ -206,6 +216,33 @@ Réglages par env : `GROQ_TRIAGE_MODEL`, `GROQ_MODEL`, `GROQ_DIGEST_MODEL`,
 `GROQ_MAX_ANALYZE` (60), `GROQ_MAX_ENRICH` (12), `GROQ_MAX_DIGEST` (5),
 `GROQ_DIGEST_CHARS` (14000), `GROQ_PACE_SECONDS` (2.2), `GROQ_SCORE_KEEP` (6).
 Test offline (mock, sans réseau) : `python _test_analyzer.py`.
+
+### 4.1 Stack IA QUALITÉ : Mistral → Gemini → Groq (`llm.py`)
+
+Pour les tâches où la **rigueur et le style comptent** (jugement breaking, titres qui
+collent à l'image, légendes), on n'utilise plus le 8b mais le **meilleur fournisseur
+gratuit disponible**, via `llm.py` :
+
+```
+llm.provider()  →  Mistral (mistral.py)  →  Gemini (gemini.py)  →  None
+                                                                    ↓ (l'appelant retombe sur Groq)
+```
+
+- **Mistral** (`mistral.py`) — **fournisseur principal**. Clé gratuite « Experiment »
+  (console.mistral.ai). Modèle par défaut **`mistral-medium-latest`** (meilleur
+  qualité/débit gratuit : 25k tpm / 0,83 rps, surchargeable via `MISTRAL_MODEL`).
+- **Gemini** (`gemini.py`) — alternative. Clé gratuite Google AI Studio. ⚠️ nécessite un
+  **projet Google non restreint** (sinon 403/429). Défaut `gemini-2.0-flash`.
+- **Repli Groq** : si aucune clé Mistral/Gemini ou erreur → `llm.*` renvoie `None` et
+  l'appelant (`generator.py`) bascule proprement sur Groq. **Rien ne casse.**
+
+Les deux clients sont en **REST pur (urllib)**, zéro dépendance, interface identique
+(`available()`, `generate_json()`, `generate_text()`), retry/back-off sur 429/503.
+Le client Groq de `generator.py` est **paresseux** → le moteur breaking tourne sur
+Mistral **sans même exiger `GROQ_API_KEY`**.
+
+> Test connexion réelle : charger la clé du `.env` puis `python mistral.py` (ou `gemini.py`)
+> → doit afficher `{'ok': True, ...}`.
 
 ---
 
@@ -558,8 +595,8 @@ python markets_extra.py   # choisit automatiquement le post selon le jour couran
 
 ### 7.6 Moteur Breaking temps réel (`pipeline/breaking_scan.py`)
 
-Flux **quasi temps réel** dédié éco/tech/IA/blockchain/quantique. Workflow
-`breaking_scan.yml` **toutes les 20 min (5h-23h UTC)**. Posts en `pending`.
+Flux **quasi temps réel** dédié éco/tech/IA/blockchain/quantique. Cœur du média : le
+titre **colle à l'image**, info **rigoureuse**, photos **réelles**. Posts en `pending`.
 
 Pipeline rapide :
 1. **Candidats récents** (`fetch_candidates`) : flux RSS DIRECTS des verticales
@@ -568,15 +605,35 @@ Pipeline rapide :
 3. **Jugement IA EN LOT** (`judge`, 1 seul appel `llm`) : ne garde que `breaking==true`
    & `score ≥ BREAKING_SCORE_MIN` (7), cap `BREAKING_MAX_PER_SCAN` (2). Sécurité : si
    aucun fournisseur IA qualité (Mistral/Gemini), le scan s'abstient (rien posté).
-4. **Enrichissement** (`enrich`) : titre FR percutant qui **colle au sujet** + entités
-   clés (dirigeants) + requête image concept.
-5. **Image = héros** (`build_image`) : **MONTAGE** réel si ≥ 2 dirigeants identifiés
-   (`montage.py`), sinon meilleure PHOTO (Wikipédia infobox → Unsplash concept).
-6. Légende (`generator`, Mistral) + sauvegarde Supabase.
+4. **Enrichissement** (`enrich`) : titre FR percutant qui **colle au sujet** + entités.
+   **Figure emblématique** : si le sujet porte sur une ENTREPRISE, l'IA sort son
+   dirigeant emblématique **même non cité** (Strategy→Saylor, Tesla→Musk, Nvidia→Huang,
+   OpenAI→Altman…) → vrai visage reconnaissable. Renvoie aussi `companies` (+ domaine).
+5. **Image = héros** (`build_image`), par ordre :
+   - **≥ 2 dirigeants** → **MONTAGE** de leurs vrais portraits (`montage.py`)
+   - **1 dirigeant / figure de la boîte** → son **portrait** (Wikipédia infobox)
+   - sinon → **photo concept** (Unsplash, sur la requête image de l'IA)
+   - Filet : si le portrait n'a pas de photo Wikipédia → repli concept (jamais d'image cassée).
+6. Légende (`generator`, Mistral) + sauvegarde Supabase (`chart_type` = `breaking`/`montage`).
+
+> Logos d'entreprise : abandonnés — aucune source gratuite haute résolution (Clearbit mort,
+> favicons 48px pixelisés, Wikipédia incohérent). La **figure emblématique** remplit ce rôle.
+
+**Surlignage jaune intelligent** (`breaking._is_significant_number`, hérité par `montage`) :
+un nombre n'est surligné que si c'est une **vraie stat** (unité/magnitude `1 million`,
+virgule `5,7`, séparateur de milliers `30 000`, entier ≥2 chiffres hors année). **Jamais**
+un label (`T1`, `5G`, `GPT-6`), un chiffre seul, ou une année (`2026`).
+
+**Déclenchement FIABLE via cron-job.org** (pas le cron GitHub, trop peu fiable) :
+- `breaking_scan.yml` a un `schedule` GitHub (filet) **+ `workflow_dispatch`**.
+- Un cronjob **cron-job.org** (gratuit) appelle l'API GitHub toutes les ~30 min :
+  `POST https://api.github.com/repos/hugokrvl/media-auto/actions/workflows/breaking_scan.yml/dispatches`
+  body `{"ref":"main"}`, header `Authorization: Bearer <PAT fine-grained, Actions: write>`.
+  Succès = **204**. C'est ça qui garantit le temps réel (le cron GitHub natif tardait/sautait).
 
 Réglages env : `BREAKING_RECENT_MIN`, `BREAKING_MAX_PER_SCAN`, `BREAKING_SCORE_MIN`.
-Test local (sans Supabase) : voir le harnais dans l'historique — `fetch_candidates()`
-→ `judge()` → `enrich()` → `build_image()`.
+Test local (sans Supabase) : `fetch_candidates()` → `judge()` → `enrich()` → `build_image()`
+(charger `MISTRAL_API_KEY` depuis `.env`).
 
 ---
 
@@ -676,9 +733,14 @@ Modèle : `.env.example` (committé, vide). Réel : `.env` (ignoré par git) + s
 
 ```
 GROQ_API_KEY
+MISTRAL_API_KEY          # IA QUALITÉ principale (§4.1) — gratuit console.mistral.ai.
+                         #   Sans elle : repli Gemini puis Groq. MISTRAL_MODEL optionnel.
+GEMINI_API_KEY           # alternative IA qualité (§4.1) — gratuit Google AI Studio.
+                         #   ⚠️ projet Google non restreint requis. GEMINI_MODEL optionnel.
 SUPABASE_URL
 SUPABASE_KEY              # clé service_role (JWT legacy)
 NTFY_TOPIC
+UNSPLASH_ACCESS_KEY      # photos concept (breaking sans personne). PEXELS_API_KEY = fallback.
 NEWSLETTER_EMAIL         # boîte Gmail dédiée (ex: hugo1actualite@gmail.com)
 NEWSLETTER_PASSWORD      # mot de passe d'application (16 car.), PAS le mdp du compte
 NEWSLETTER_IMAP          # optionnel : déduit du domaine si absent
@@ -689,8 +751,13 @@ INSTAGRAM_ACCESS_TOKEN / INSTAGRAM_BUSINESS_ID
 LINKEDIN_ACCESS_TOKEN / LINKEDIN_PERSON_ID
 ```
 
+> 🔑 **Token cron-job.org** (déclencheur breaking, §7.6) : un **PAT GitHub fine-grained**
+> (repo `media-auto`, permission *Actions: Read and write*) vit **uniquement dans cron-job.org**
+> (header Authorization). PAS dans `.env` ni le code. À régénérer s'il est exposé.
+
 > ⚠️ Ne JAMAIS mettre un vrai secret dans `.env.example` (il est committé sur un repo
 > public). Les secrets réels vont dans `.env` (gitignored) et dans les secrets GitHub.
+> ⚠️ Tous les secrets sont lus avec `.strip()` (un `\n` collé casse les en-têtes HTTP).
 
 **Réseaux sociaux (phase 2)** : X (OAuth 1.0a Read+Write, 1500 tweets/mois free),
 Instagram (Graph API, compte Business + Page FB, token 60 j), LinkedIn (Share API,
@@ -716,6 +783,9 @@ python _test_analyzer.py       # split 2 modèles + digest vidéo (offline, mock
 python _test_email.py          # filtres email + détection serveur (offline)
 python _test_email_live.py     # connexion IMAP réelle (lit la vraie boîte)
 python _test_youtube.py        # résolution chaîne YouTube → flux
+python mistral.py              # test connexion Mistral (→ {'ok': True, ...})
+python gemini.py               # test connexion Gemini (→ {'ok': True, ...})
+python breaking_scan.py        # MOTEUR breaking (RSS→IA→photo/montage→Supabase)
 python main.py                 # PIPELINE COMPLET (nécessite toutes les clés)
 python reprocess.py            # retraite les transcriptions collées (file Supabase)
 ```
@@ -751,6 +821,10 @@ python reprocess.py            # retraite les transcriptions collées (file Supa
 | ✅ | **Module résultats sportifs** | 1 post/championnat/jour quand tout est fini ; ESPN (CdM/Euro, sans clé) + API-Sports (ligues nat.) ; design scores + podium F1 avec portrait du vainqueur ; traduction FR clubs/pays — FAIT (§7.3) |
 | ✅ | **Post clôture des marchés** | 1 post/jour (lun-ven) : indices US/Europe/Asie + BTC + Or via Yahoo Finance (sans clé) ; valeurs FR + variation vert/rouge — FAIT (§7.4) |
 | ✅ | **Top/Flop actions + sentiment** | Top/Flop actions mondiales du jour (lun-ven) et de la semaine (sam) ; sentiment VIX + Fear & Greed crypto (dim) — univers curaté fiable — FAIT (§7.5) |
+| ✅ | **Stack IA qualité (Mistral/Gemini)** | `llm.py` Mistral→Gemini→Groq ; rigueur jugement + titres + légendes ; clients REST gratuits — FAIT (§4.1) |
+| ✅ | **Moteur Breaking temps réel** | scan /30 min (cron-job.org) éco/tech/IA/crypto/quantique ; jugement IA, titre qui colle, **montage** de vrais portraits, **figure emblématique** d'entreprise, surlignage chiffres intelligent — FAIT (§7.6) |
+| ✅ | **Verticales IA/blockchain/quantique** | +18 sources directes + catégories/badges dédiés (IA violet, CRYPTO orange, QUANTIQUE cyan) — FAIT (§5) |
+| ⏳ | **Logos d'entreprise** | reporté : pas de source gratuite HD (Clearbit mort, favicons 48px). Figure emblématique remplit le rôle. Option = banque de logos payante |
 | ⏳ | **Portraits F1 : rotation complète** | curer 2-3 visages vérifiés par vainqueur récurrent (mécanisme `_PORTRAIT_FILES` déjà en place) + override Stroll/Bearman/Albon. Faible priorité (l'infobox couvre déjà les favoris) |
 | ⏳ | **Publication réseaux** (`poster/`) | X (tweepy), Instagram (Graph API), LinkedIn (Share API) après « Approuver » |
 | ⏳ | **Déduplication par URL exacte** | renfort du dédup sémantique existant |
