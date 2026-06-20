@@ -5,9 +5,18 @@ Respecte les contraintes de chaque plateforme.
 
 import json
 import os
-from groq import Groq
 
-client = Groq(api_key=os.environ["GROQ_API_KEY"])
+# Client Groq PARESSEUX : on ne le crée (et n'exige GROQ_API_KEY) qu'au moment où on
+# en a vraiment besoin → le moteur breaking peut tourner sur Mistral seul, sans Groq.
+_client = None
+
+
+def _groq():
+    global _client
+    if _client is None:
+        from groq import Groq
+        _client = Groq(api_key=os.environ["GROQ_API_KEY"])
+    return _client
 
 # Captions sur le 8b (500k tokens/jour) : qualité suffisante pour le social media,
 # économise le quota 70b (100k/jour) pour l'enrichissement structuré uniquement.
@@ -59,7 +68,7 @@ def generate_captions(article: dict) -> dict:
     # 1200 tokens : 3 textes (Twitter + Instagram 150-300 mots + LinkedIn 200-400 mots)
     # dépassaient les 600 précédents → JSON tronqué → erreur 'json_validate_failed'.
     def _ask(max_toks: int) -> dict:
-        response = client.chat.completions.create(
+        response = _groq().chat.completions.create(
             model=GENERATION_MODEL,
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
