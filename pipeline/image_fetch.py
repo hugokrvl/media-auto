@@ -445,8 +445,30 @@ _NOT_PORTRAIT = (
 )
 
 
+def _context_key(title: str, name: str) -> str:
+    """Signature de CONTEXTE d'une photo (pour ne pas garder 10 photos du même shooting).
+    Garde les mots descriptifs (lieu, événement, ANNÉE) ; ignore le nom, 'cropped', et les
+    longs ID Flickr. Deux photos du même contexte → même clé → on n'en garde qu'une."""
+    toks = re.sub(r"[^a-z0-9]+", " ", _norm_word(title)).split()
+    name_toks = set(re.sub(r"[^a-z0-9]+", " ", _norm_word(name)).split())
+    drop = name_toks | {"file", "jpg", "jpeg", "png", "px", "1280px", "1280", "800px",
+                        "640px", "cropped", "cropped2", "crop", "edit", "cropedit",
+                        "portrait", "official", "headshot", "the", "of", "at", "in"}
+    desc = []
+    for t in toks:
+        if t in drop:
+            continue
+        if t.isdigit():
+            if len(t) == 4 and 1900 <= int(t) <= 2099:   # une ANNÉE = descriptif
+                desc.append(t)
+            continue                                      # ID Flickr / jour → ignoré
+        desc.append(t)
+    return " ".join(sorted(set(desc))) if desc else "anon"
+
+
 def _commons_portraits(name: str, max_n: int = 8) -> list[str]:
-    """Portraits SOLO probables depuis Commons (exclut groupes/peintures/historique)."""
+    """Portraits SOLO probables depuis Commons (exclut groupes/peintures/historique/
+    et les quasi-doublons du même shooting via la signature de contexte)."""
     last = _norm_word(name.split()[-1])
     params = urllib.parse.urlencode({
         "action": "query", "list": "search", "srsearch": name,
@@ -459,6 +481,7 @@ def _commons_portraits(name: str, max_n: int = 8) -> list[str]:
     except Exception:
         return []
     titles = []
+    seen_ctx: set[str] = set()
     for it in data.get("query", {}).get("search", []):
         t = it.get("title", "")
         if not t.lower().endswith((".jpg", ".jpeg", ".png")):
@@ -475,8 +498,12 @@ def _commons_portraits(name: str, max_n: int = 8) -> list[str]:
             continue
         if any(g in tn for g in _GROUP_HINT):       # écarte les photos de groupe
             continue
+        ctx = _context_key(t, name)                 # VRAIE variété : 1 photo par contexte
+        if ctx in seen_ctx:                         # même shooting/interview → on saute
+            continue
+        seen_ctx.add(ctx)
         titles.append(t)
-        if len(titles) >= 16:
+        if len(titles) >= 12:
             break
     if not titles:
         return []
