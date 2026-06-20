@@ -7,3 +7,5 @@ numpy==2.1.2
 tweepy==4.14.0
 requests==2.32.3
 youtube-transcript-api==0.6.2
+rembg==2.0.76          # détourage des portraits pour les montages pro (modèle u2netp léger)
+onnxruntime==1.19.2    # runtime du modèle de détourage
