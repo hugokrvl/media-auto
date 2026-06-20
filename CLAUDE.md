@@ -55,7 +55,15 @@ GitHub Actions (cron 21h30 UTC, lun-ven)  ← 4e entrée, indépendante
 GitHub Actions (cron lun-ven / sam / dim)  ← 5e entrée, indépendante
   → pipeline/markets/markets_extra.py  Top/Flop actions (jour/semaine)
                            + sentiment VIX & crypto le dimanche — voir §7.5
+
+GitHub Actions (cron */20 min, 5h-23h UTC)  ← 6e entrée : BREAKING temps réel
+  → pipeline/breaking_scan.py  RSS verticales → jugement IA (Mistral) →
+                           photo/MONTAGE réel → post breaking — voir §7.6
 ```
+
+**IA de qualité (rigueur, titres, légendes)** : `llm.py` choisit le 1er fournisseur
+dispo — **Mistral** (`mistral.py`) → **Gemini** (`gemini.py`) → repli **Groq**. Clés
+gratuites (Mistral La Plateforme / Google AI Studio). Tout repli proprement sur Groq.
 
 Le pipeline **génère et stocke** les posts en statut `pending`. Rien n'est publié
 automatiquement : l'utilisateur approuve chaque post sur le site avant mise en ligne.
@@ -547,6 +555,28 @@ cd pipeline/markets
 $env:PYTHONIOENCODING="utf-8"
 python markets_extra.py   # choisit automatiquement le post selon le jour courant
 ```
+
+### 7.6 Moteur Breaking temps réel (`pipeline/breaking_scan.py`)
+
+Flux **quasi temps réel** dédié éco/tech/IA/blockchain/quantique. Workflow
+`breaking_scan.yml` **toutes les 20 min (5h-23h UTC)**. Posts en `pending`.
+
+Pipeline rapide :
+1. **Candidats récents** (`fetch_candidates`) : flux RSS DIRECTS des verticales
+   (pas Google News → vitesse), articles publiés ≤ `BREAKING_RECENT_MIN` (45 min).
+2. **Dédoublonnage** (`dedupe`) vs historique 3 j (`dedup.classify`) → jamais 2× la même info.
+3. **Jugement IA EN LOT** (`judge`, 1 seul appel `llm`) : ne garde que `breaking==true`
+   & `score ≥ BREAKING_SCORE_MIN` (7), cap `BREAKING_MAX_PER_SCAN` (2). Sécurité : si
+   aucun fournisseur IA qualité (Mistral/Gemini), le scan s'abstient (rien posté).
+4. **Enrichissement** (`enrich`) : titre FR percutant qui **colle au sujet** + entités
+   clés (dirigeants) + requête image concept.
+5. **Image = héros** (`build_image`) : **MONTAGE** réel si ≥ 2 dirigeants identifiés
+   (`montage.py`), sinon meilleure PHOTO (Wikipédia infobox → Unsplash concept).
+6. Légende (`generator`, Mistral) + sauvegarde Supabase.
+
+Réglages env : `BREAKING_RECENT_MIN`, `BREAKING_MAX_PER_SCAN`, `BREAKING_SCORE_MIN`.
+Test local (sans Supabase) : voir le harnais dans l'historique — `fetch_candidates()`
+→ `judge()` → `enrich()` → `build_image()`.
 
 ---
 

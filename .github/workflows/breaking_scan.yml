@@ -1,0 +1,44 @@
+name: MediaAuto — Breaking Scan (temps réel)
+
+on:
+  schedule:
+    # Toutes les 20 min de 5h à 23h UTC (≈ 6h-1h Paris) — heures d'actu actives
+    - cron: "*/20 5-23 * * *"
+  workflow_dispatch:
+
+# Évite que deux scans se chevauchent
+concurrency:
+  group: breaking-scan
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run breaking scan
+        env:
+          MISTRAL_API_KEY:     ${{ secrets.MISTRAL_API_KEY }}
+          GEMINI_API_KEY:      ${{ secrets.GEMINI_API_KEY }}
+          GROQ_API_KEY:        ${{ secrets.GROQ_API_KEY }}
+          SUPABASE_URL:        ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY:        ${{ secrets.SUPABASE_KEY }}
+          UNSPLASH_ACCESS_KEY: ${{ secrets.UNSPLASH_ACCESS_KEY }}
+          PEXELS_API_KEY:      ${{ secrets.PEXELS_API_KEY }}
+          NTFY_TOPIC:          ${{ secrets.NTFY_TOPIC }}
+        run: |
+          cd pipeline
+          python breaking_scan.py
