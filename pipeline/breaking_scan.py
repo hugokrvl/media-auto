@@ -27,6 +27,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import feedparser
 import llm
+import mistral
 import image_fetch
 import breaking as breaking_renderer
 import montage as montage_renderer
@@ -35,6 +36,7 @@ import dedup
 RECENT_MIN     = int(os.environ.get("BREAKING_RECENT_MIN", "45"))
 MAX_PER_SCAN   = int(os.environ.get("BREAKING_MAX_PER_SCAN", "2"))
 SCORE_MIN      = int(os.environ.get("BREAKING_SCORE_MIN", "7"))
+COHERENCE_MIN  = int(os.environ.get("BREAKING_COHERENCE_MIN", "5"))
 VERTICALS      = {"ia", "crypto", "quantique", "tech", "finance"}
 
 
@@ -165,8 +167,9 @@ def enrich(a: dict) -> dict:
 
 # ── 5. Image (montage si 2+ portraits) + rendu ─────────────────────────────────
 
-def build_image(a: dict) -> tuple[bytes | None, str]:
-    """Retourne (png_bytes, chart_type). Montage si ≥2 portraits, sinon photo, sinon None."""
+def build_image(a: dict) -> tuple[bytes | None, str, str]:
+    """Retourne (png_bytes, chart_type, description_image). Montage si ≥2 portraits,
+    sinon portrait unique, sinon photo concept. description_image sert à la vérification."""
     portraits = []
     for p in a.get("people", []):
         url = image_fetch._wikipedia_pageimage(p["name"])
@@ -175,26 +178,56 @@ def build_image(a: dict) -> tuple[bytes | None, str]:
             portraits.append({"name": p["name"], "label": p.get("org", ""), "photo_bytes": data})
 
     if len(portraits) >= 2:
-        return montage_renderer.make_montage_image(a, portraits, badge="BREAKING"), "montage"
+        names = ", ".join(p["name"] for p in portraits)
+        return (montage_renderer.make_montage_image(a, portraits, badge="BREAKING"),
+                "montage", f"un montage des portraits de {names}")
 
     # 1 seul dirigeant identifié → post photo avec SON portrait (ex: OpenAI → Sam Altman).
     if len(portraits) == 1:
-        return breaking_renderer.make_breaking_image(
-            a, portraits[0]["photo_bytes"], badge="BREAKING"), "breaking"
+        p = portraits[0]
+        desc = f"un portrait de {p['name']}" + (f" ({p['label']})" if p["label"] else "")
+        return (breaking_renderer.make_breaking_image(a, p["photo_bytes"], badge="BREAKING"),
+                "breaking", desc)
 
     # Pas de dirigeant identifié : on privilégie la PHOTO CONCEPT de la requête IA
     # (propre et sûre) AVANT la recherche Wikipédia par mots du titre — qui peut matcher
     # un mot AMBIGU ("Codex" → manuscrit médiéval, "Vision" → œil, "Visa" → document…).
-    url = None
+    url, desc = None, ""
     if a.get("image_query"):
         url = (image_fetch._fetch_unsplash(a["image_query"])
                or image_fetch._fetch_pexels(a["image_query"]))
+        if url:
+            desc = f"une photo d'illustration sur le thème « {a['image_query']} »"
     if not url:
         url = image_fetch.fetch_photo_url(a)   # repli : Wikipédia entités + Unsplash titre
+        desc = "une image d'illustration (origine variable)"
     data = image_fetch.download_image(url) if url else None
     if data:
-        return breaking_renderer.make_breaking_image(a, data, badge="BREAKING"), "breaking"
-    return None, ""
+        return breaking_renderer.make_breaking_image(a, data, badge="BREAKING"), "breaking", desc
+    return None, "", ""
+
+
+# ── Vérification de cohérence (vision) ─────────────────────────────────────────
+
+def verify_coherence(img_bytes: bytes, a: dict, image_desc: str) -> tuple[bool, int, str]:
+    """L'IMAGE illustre-t-elle vraiment le sujet ? (via Mistral vision). Retourne
+    (coherent, score 0-10, raison). Si Mistral indispo → ne bloque pas (coherent=True)."""
+    if not mistral.available():
+        return True, 10, "(vérif désactivée)"
+    title = a.get("title_fr") or a.get("title", "")
+    prompt = (
+        f'Tu vérifies la cohérence d\'un post d\'actualité. SUJET du titre : "{title}". '
+        f"La photo de fond est censée être : {image_desc}. REGARDE l'image. "
+        "RÈGLES : un PORTRAIT d'une personne liée au sujet (dirigeant, personnalité) = COHÉRENT ; "
+        "une photo CONCEPT du thème = COHÉRENT. Mets coherent=false UNIQUEMENT si l'image n'a "
+        "MANIFESTEMENT RIEN à voir (ex : manuscrit/peinture ancienne pour une actu tech, "
+        "animal pour la finance, paysage sans rapport). "
+        'JSON : {"coherent":<bool>,"score":<0-10>,"raison":"<courte>"}'
+    )
+    res = mistral.generate_json_image(prompt, img_bytes)
+    if not res:
+        return True, 10, "(vérif indispo)"
+    return bool(res.get("coherent", True)), int(res.get("score", 10)), str(res.get("raison", ""))
 
 
 def _save(a: dict, img: bytes, chart_type: str) -> None:
@@ -232,13 +265,18 @@ def main():
     for a in kept:
         try:
             enrich(a)
-            img, chart_type = build_image(a)
+            img, chart_type, image_desc = build_image(a)
             if not img:
                 print(f"[SCAN] ⊘ pas d'image pour : {a['title'][:50]}")
                 continue
+            # VÉRIFICATION : l'image colle-t-elle au sujet ? (vision Mistral)
+            coherent, score, reason = verify_coherence(img, a, image_desc)
+            if not coherent or score < COHERENCE_MIN:
+                print(f"[SCAN] ⊘ INCOHÉRENT ({score}/10 : {reason}) — ignoré : {a['title'][:42]}")
+                continue
             _save(a, img, chart_type)
             posted += 1
-            print(f"[SCAN] ✓ {chart_type.upper()} : {a['title_fr'][:60]}")
+            print(f"[SCAN] ✓ {chart_type.upper()} (cohérence {score}/10) : {a['title_fr'][:50]}")
         except Exception as e:
             print(f"[SCAN] ✗ {type(e).__name__} sur '{a['title'][:40]}': {e}")
 

@@ -24,23 +24,10 @@ def available() -> bool:
     return bool(API_KEY)
 
 
-def _call(prompt: str, system: str, *, as_json: bool,
-          max_tokens: int, temperature: float, retries: int = 3) -> str | None:
+def _send(body: dict, retries: int = 3) -> str | None:
+    """POST /chat/completions avec retry/back-off sur 429. Retourne le texte ou None."""
     if not API_KEY:
         return None
-    messages = []
-    if system:
-        messages.append({"role": "system", "content": system})
-    messages.append({"role": "user", "content": prompt})
-    body: dict = {
-        "model": MODEL,
-        "messages": messages,
-        "temperature": temperature,
-        "max_tokens": max_tokens,
-    }
-    if as_json:
-        body["response_format"] = {"type": "json_object"}
-
     data = json.dumps(body).encode("utf-8")
     for attempt in range(retries):
         try:
@@ -48,11 +35,10 @@ def _call(prompt: str, system: str, *, as_json: bool,
                 "Authorization": f"Bearer {API_KEY}",
                 "Content-Type": "application/json",
             })
-            with urllib.request.urlopen(req, timeout=30) as r:
+            with urllib.request.urlopen(req, timeout=40) as r:
                 resp = json.loads(r.read())
             return resp["choices"][0]["message"]["content"].strip()
         except urllib.error.HTTPError as e:
-            # 429 (quota/débit) → back-off ; sinon abandon (repli Groq)
             if e.code == 429 and attempt < retries - 1:
                 time.sleep(2.0 * (attempt + 1))
                 continue
@@ -62,6 +48,47 @@ def _call(prompt: str, system: str, *, as_json: bool,
             print(f"[MISTRAL] {type(e).__name__}: {e} — repli")
             return None
     return None
+
+
+def _call(prompt: str, system: str, *, as_json: bool,
+          max_tokens: int, temperature: float) -> str | None:
+    if not API_KEY:
+        return None
+    messages = []
+    if system:
+        messages.append({"role": "system", "content": system})
+    messages.append({"role": "user", "content": prompt})
+    body: dict = {"model": MODEL, "messages": messages,
+                  "temperature": temperature, "max_tokens": max_tokens}
+    if as_json:
+        body["response_format"] = {"type": "json_object"}
+    return _send(body)
+
+
+def generate_json_image(prompt: str, image_bytes: bytes, *,
+                        max_tokens: int = 300, temperature: float = 0.1) -> dict | None:
+    """Vision : envoie une image + un prompt, retourne du JSON. mistral-medium gère la vision."""
+    if not API_KEY:
+        return None
+    import base64
+    b64 = base64.b64encode(image_bytes).decode()
+    body = {
+        "model": MODEL,
+        "messages": [{"role": "user", "content": [
+            {"type": "text", "text": prompt},
+            {"type": "image_url", "image_url": f"data:image/png;base64,{b64}"},
+        ]}],
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+        "response_format": {"type": "json_object"},
+    }
+    raw = _send(body)
+    if not raw:
+        return None
+    try:
+        return json.loads(raw)
+    except Exception:
+        return None
 
 
 def generate_text(prompt: str, system: str = "", *,
