@@ -215,7 +215,11 @@ Chaque source porte un champ `type` (défaut `"rss"`) :
 ```bash
 cd pipeline && python validate_sources.py   # teste chaque flux en réel (RSS + YouTube)
 ```
-**État validé : 30/30 sources OK.** Beaucoup de médias FR (Reuters, Les Échos,
+**État validé : 48 sources** (12 finance · 9 tech · **7 IA · 5 crypto · 2 quantique** ·
+9 général · 2 sport · 2 fact-check). Verticales dédiées IA/blockchain/quantique via flux
+directs (OpenAI, DeepMind, Hugging Face, The Decoder, Cointelegraph, Decrypt, The Block,
+Quanta Magazine, The Quantum Insider…) + catégories de badge dédiées (IA violet, CRYPTO
+orange, QUANTIQUE cyan). Beaucoup de médias FR (Reuters, Les Échos,
 Boursorama, RMC…) n'ont plus de flux RSS natif fonctionnel → on passe par
 **Google News** via le helper `_gn("site:domaine.fr when:1d")` (articles récents du
 domaine, fiable, toujours à jour ; les URLs d'articles sont alors des liens

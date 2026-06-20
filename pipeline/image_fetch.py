@@ -108,6 +108,9 @@ _TRANSLATE = {
 _CAT_CONTEXT = {
     "finance":   "finance economy",
     "tech":      "technology digital",
+    "ia":        "artificial intelligence technology",
+    "crypto":    "cryptocurrency blockchain bitcoin",
+    "quantique": "quantum computing physics laboratory",
     "sport":     "sport athlete",
     "general":   "",          # pas d'ancrage générique → on laisse les mots du titre
     "factcheck": "journalism media",

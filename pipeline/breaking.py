@@ -28,6 +28,9 @@ _RED     = (210, 35, 35)
 _CAT_COLORS = {
     "finance":   (226, 165, 15),
     "tech":      (129, 140, 248),
+    "ia":        (167, 139, 250),   # violet IA
+    "crypto":    (247, 147, 26),    # orange bitcoin
+    "quantique": (45, 212, 191),    # cyan quantique
     "general":   (74, 222, 128),
     "sport":     (251, 146, 60),
     "factcheck": (248, 113, 113),

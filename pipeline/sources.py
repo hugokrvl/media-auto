@@ -31,7 +31,6 @@ SOURCES = [
     {"name": "Les Échos Investir", "url": _gn("site:investir.lesechos.fr when:2d"), "category": "finance"},
     {"name": "Boursorama", "url": _gn("site:boursorama.com when:1d"), "category": "finance"},
     {"name": "Zone Bourse", "url": _gn("site:zonebourse.com when:1d"), "category": "finance"},
-    {"name": "CoinDesk", "url": "https://www.coindesk.com/arc/outboundfeeds/rss/", "category": "finance"},
     {"name": "Bloomberg Markets", "url": "https://feeds.bloomberg.com/markets/news.rss", "category": "finance"},
 
     # ── Finance internationale (premium, titres en accès libre) ────────────────
@@ -47,8 +46,32 @@ SOURCES = [
     {"name": "The Verge", "url": "https://www.theverge.com/rss/index.xml", "category": "tech"},
     {"name": "TechCrunch", "url": "https://techcrunch.com/feed/", "category": "tech"},
     {"name": "Wired", "url": "https://www.wired.com/feed/rss", "category": "tech"},
+    {"name": "Ars Technica", "url": "https://feeds.arstechnica.com/arstechnica/index", "category": "tech"},
+    {"name": "The Register", "url": "https://www.theregister.com/headlines.atom", "category": "tech"},
+    {"name": "MIT Technology Review", "url": "https://www.technologyreview.com/feed/", "category": "tech"},
+    {"name": "Hacker News", "url": "https://hnrss.org/frontpage?points=150", "category": "tech"},
     {"name": "01net", "url": "https://www.01net.com/feed/", "category": "tech"},
     {"name": "Numerama", "url": "https://www.numerama.com/feed/", "category": "tech"},
+
+    # ── Intelligence artificielle ─────────────────────────────────────────────
+    {"name": "OpenAI", "url": "https://openai.com/news/rss.xml", "category": "ia"},
+    {"name": "Google DeepMind", "url": "https://deepmind.google/blog/rss.xml", "category": "ia"},
+    {"name": "Anthropic", "url": _gn("site:anthropic.com/news when:7d"), "category": "ia"},
+    {"name": "Mistral AI", "url": _gn("site:mistral.ai/news when:14d"), "category": "ia"},
+    {"name": "Hugging Face", "url": "https://huggingface.co/blog/feed.xml", "category": "ia"},
+    {"name": "The Decoder", "url": "https://the-decoder.com/feed/", "category": "ia"},
+    {"name": "VentureBeat AI", "url": "https://venturebeat.com/category/ai/feed/", "category": "ia"},
+
+    # ── Blockchain / Crypto ───────────────────────────────────────────────────
+    {"name": "CoinDesk", "url": "https://www.coindesk.com/arc/outboundfeeds/rss/", "category": "crypto"},
+    {"name": "Cointelegraph", "url": "https://cointelegraph.com/rss", "category": "crypto"},
+    {"name": "The Block", "url": "https://www.theblock.co/rss.xml", "category": "crypto"},
+    {"name": "Decrypt", "url": "https://decrypt.co/feed", "category": "crypto"},
+    {"name": "DL News", "url": "https://www.dlnews.com/arc/outboundfeeds/rss/", "category": "crypto"},
+
+    # ── Informatique quantique ────────────────────────────────────────────────
+    {"name": "Quanta Magazine", "url": "https://www.quantamagazine.org/feed/", "category": "quantique"},
+    {"name": "The Quantum Insider", "url": "https://thequantuminsider.com/feed/", "category": "quantique"},
 
     # ── Actu générale (nationale + régionale) ─────────────────────────────────
     {"name": "BBC News", "url": "https://feeds.bbci.co.uk/news/rss.xml", "category": "general"},
@@ -80,4 +103,4 @@ SOURCES = [
     {"name": "Newsletters (email)", "type": "email", "category": "general"},
 ]
 
-CATEGORIES = ["finance", "tech", "general", "sport", "factcheck"]
+CATEGORIES = ["finance", "tech", "ia", "crypto", "quantique", "general", "sport", "factcheck"]

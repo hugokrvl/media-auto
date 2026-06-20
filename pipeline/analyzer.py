@@ -45,12 +45,13 @@ TRIAGE_SYSTEM = """Tu es rédacteur en chef d'un média économique sérieux, or
 Tu juges vite si un article mérite d'être relayé sur les réseaux. Réponds UNIQUEMENT
 en JSON valide, sans markdown ni commentaire."""
 
-TRIAGE_PROMPT = """Évalue cet article pour un compte média français (finance, tech, actu, sport).
+TRIAGE_PROMPT = """Évalue cet article pour un média français ÉCONOMIE / TECH / IA / BLOCKCHAIN / QUANTIQUE.
 
 Critères PRIORITAIRES pour garder (score ≥ 6) :
-- impact économique ou sociétal réel, pertinent pour un public français
+- impact économique, technologique ou scientifique réel et significatif
+- sujets cœur de ligne : intelligence artificielle, cryptomonnaies/blockchain,
+  informatique quantique, grandes entreprises tech, marchés, innovation
 - info vérifiable, fiable, issue d'une source reconnue
-- actualité nationale ou internationale significative
 
 À REJETER impérativement (score ≤ 4, keep=false) :
 - promotionnel : offres, réductions, codes promo, abonnements ("-X% off", "deal", "discount")
@@ -69,7 +70,7 @@ Réponds en JSON EXACTEMENT ainsi :
   "score": <entier 0-10>,
   "verified": <true si info fiable et vérifiable, sinon false>,
   "keep": <true si score >= 6 ET verified, sinon false>,
-  "category": "<finance|tech|general|sport|factcheck>",
+  "category": "<finance|tech|ia|crypto|quantique|general|sport|factcheck>",
   "reason": "<1 phrase courte>"
 }
 

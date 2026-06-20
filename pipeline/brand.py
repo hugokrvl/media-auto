@@ -137,6 +137,9 @@ def variations(base, n):
 CATEGORY_LABELS = {
     "finance": "FINANCE",
     "tech": "TECH",
+    "ia": "IA",
+    "crypto": "CRYPTO",
+    "quantique": "QUANTIQUE",
     "general": "ACTUALITÉ",
     "sport": "SPORT",
     "factcheck": "VÉRIF",
