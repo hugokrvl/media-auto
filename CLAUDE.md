@@ -15,7 +15,7 @@ avec **validation humaine** avant publication. Tourne chaque nuit à 1h (Paris) 
 4. [Limites Groq & architecture 2 modèles](#4-limites-groq--architecture-2-modèles) (+ **stack IA qualité Mistral/Gemini §4.1**)
 5. [Sources (RSS · YouTube · Email)](#5-sources--pipelinesourcespy)
 6. [Dédup intelligent](#6-dédup-intelligent--pipelinededuppy)
-7. [Identité visuelle HK Média](#7-identité-visuelle--charte-hk-média) (dataviz · Breaking · images · sport §7.3 · marchés §7.4-5 · **moteur breaking temps réel §7.6**)
+7. [Identité visuelle HK Média](#7-identité-visuelle--charte-hk-média) (dataviz · Breaking · images · sport §7.3 · marchés §7.4-5 · **moteur breaking §7.6** · **portraits/rotation §7.7**)
 8. [Base de données Supabase](#8-base-de-données-supabase)
 9. [Site de planning](#9-site-de-planning-docs--github-pages)
 10. [Variables d'environnement / secrets](#10-variables-denvironnement--secrets)
@@ -56,9 +56,10 @@ GitHub Actions (cron lun-ven / sam / dim)  ← 5e entrée, indépendante
   → pipeline/markets/markets_extra.py  Top/Flop actions (jour/semaine)
                            + sentiment VIX & crypto le dimanche — voir §7.5
 
-GitHub Actions (cron */20 min, 5h-23h UTC)  ← 6e entrée : BREAKING temps réel
-  → pipeline/breaking_scan.py  RSS verticales → jugement IA (Mistral) →
-                           photo/MONTAGE réel → post breaking — voir §7.6
+cron-job.org (gratuit, toutes les ~30 min)  ← 6e entrée : BREAKING temps réel
+  → déclenche breaking_scan.yml via l'API GitHub (workflow_dispatch, fiable)
+  → pipeline/breaking_scan.py  RSS verticales → jugement IA (Mistral) → titre qui colle →
+       figure emblématique / MONTAGE détouré / photo concept → vérif vision → post — §7.6 / §7.7
 ```
 
 **IA de qualité (rigueur, titres, légendes)** : `llm.py` choisit le 1er fournisseur
@@ -95,7 +96,8 @@ media-auto/
 │   ├── brand.py           # charte : couleurs, polices, helpers (fr(), variations())
 │   ├── breaking.py        # rendu post photo plein cadre (titre + chiffres jaunes) — §7.1
 │   ├── montage.py         # MONTAGE PRO : silhouettes détourées (rembg) sur fond design — §7.6
-│   ├── image_fetch.py     # recherche d'images (Wikipédia infobox → Unsplash) — §7.2
+│   ├── image_fetch.py     # recherche d'images + pool/rotation de portraits — §7.2 / §7.7
+│   ├── figures.py         # 66 figures récurrentes (name→org) pour rotation/montage — §7.7
 │   ├── llm.py             # sélecteur IA qualité : Mistral → Gemini → (repli Groq) — §4
 │   ├── mistral.py         # client REST Mistral (free tier) — §4
 │   ├── gemini.py          # client REST Gemini (free tier) — §4
@@ -614,7 +616,7 @@ Pipeline rapide :
      (`rembg`, modèle léger `u2netp` ~4 Mo) sur fond dégradé HK + glow couleur catégorie
      + ombres portées, layout adaptatif. 100% cloud (rembg tourne dans GitHub Actions).
      Repli auto sur montage en bandes si rembg indisponible.
-   - **1 dirigeant / figure de la boîte** → son **portrait** (Wikipédia infobox)
+   - **1 dirigeant / figure de la boîte** → son **portrait** (en **rotation**, voir §7.7)
    - sinon → **photo concept** (Unsplash, sur la requête image de l'IA)
    - Filet : si le portrait n'a pas de photo Wikipédia → repli concept (jamais d'image cassée).
    - **Anti mot-ambigu** : sans dirigeant, on prend la photo CONCEPT (requête IA) AVANT la
@@ -646,6 +648,37 @@ Réglages env : `BREAKING_RECENT_MIN`, `BREAKING_MAX_PER_SCAN`, `BREAKING_SCORE_
 `BREAKING_COHERENCE_MIN` (seuil vérif vision).
 Test local (sans Supabase) : `fetch_candidates()` → `judge()` → `enrich()` → `build_image()`
 → `verify_coherence()` (charger `MISTRAL_API_KEY` depuis `.env`).
+
+### 7.7 Portraits : figures récurrentes & rotation (`figures.py`, `image_fetch.py`)
+
+Pour ne **jamais montrer toujours la même photo** d'une personnalité qui revient souvent.
+
+**Liste des figures** (`figures.py`) — **66 figures récurrentes** IA / tech / crypto / finance
+(Altman, Musk, Huang, Saylor, Powell, Lagarde…), `name → org`. Sert à (a) mapper une
+entreprise → sa figure emblématique (fiable, vs prompt seul) et (b) définir qui a une rotation.
+
+**Pool de portraits** (`image_fetch.portrait_pool(name)`) = image d'infobox Wikipédia
+(canonique) **+ portraits solo Commons**. Famous figures → **~9 photos**, moins connues → 2-4.
+
+**Filtres du pool** (cumulés, pour un pool 100% portraits solo VARIÉS) :
+- **anti-groupe** (`_GROUP_HINT` : « and / with / et / **y** / visit / president / commission… »)
+- **anti-famille** : le nom de famille apparaît **2+ fois** dans le fichier → multi-personnes
+- **anti-data-viz** (`_NOT_PORTRAIT` : net worth, stock, chart, revenue, logo, tweet…)
+- **anti-peinture / historique** (`_looks_like_painting`, `_is_historical`)
+- **anti même-shooting** (`_context_key`) : signature de CONTEXTE (lieu/événement/année,
+  en ignorant le nom, « cropped » et les longs ID Flickr) → on ne garde **qu'une photo par
+  contexte**. Évite la « fausse variété » (4 photos d'IDs Flickr proches = même interview).
+- normalisation propre du nom de fichier (« File: », « _ », ponctuation → espaces) pour de
+  vrais bords de mots.
+
+**Rotation** (`image_fetch.portrait_for(name, seed)`) : `seed` dérivé de l'URL de l'article
+→ chaque sujet montre une **photo différente** de la même personne. Dans `breaking_scan`,
+`build_image` utilise `portrait_for(p["name"], seed=hash(url)+i)`.
+
+> Photos de GROUPE : isoler **une** personne d'un groupe = reconnaissance faciale (lourde,
+> ~200 Mo) → **reportée**. On filtre les groupes et on tourne sur les photos solo (suffisant :
+> ~9 contextes distincts pour les figures fréquentes).
+> Le mécanisme de rotation existe aussi côté F1 (`scores_renderer._PORTRAIT_FILES`).
 
 ---
 
@@ -780,7 +813,8 @@ token 60 j). Détails de création dans `poster/` quand on y arrivera.
 ## 11. Tests locaux
 
 ```bash
-pip install -r requirements.txt        # feedparser, groq, supabase, matplotlib, Pillow, youtube-transcript-api…
+pip install -r requirements.txt        # feedparser, groq, supabase, matplotlib, Pillow,
+                                       # youtube-transcript-api, rembg+onnxruntime (montage détouré)…
 cp .env.example .env                   # puis remplir .env
 
 # Charger le .env (PowerShell) :
@@ -835,6 +869,10 @@ python reprocess.py            # retraite les transcriptions collées (file Supa
 | ✅ | **Top/Flop actions + sentiment** | Top/Flop actions mondiales du jour (lun-ven) et de la semaine (sam) ; sentiment VIX + Fear & Greed crypto (dim) — univers curaté fiable — FAIT (§7.5) |
 | ✅ | **Stack IA qualité (Mistral/Gemini)** | `llm.py` Mistral→Gemini→Groq ; rigueur jugement + titres + légendes ; clients REST gratuits — FAIT (§4.1) |
 | ✅ | **Moteur Breaking temps réel** | scan /30 min (cron-job.org) éco/tech/IA/crypto/quantique ; jugement IA, titre qui colle, **montage** de vrais portraits, **figure emblématique** d'entreprise, surlignage chiffres intelligent — FAIT (§7.6) |
+| ✅ | **Montage PRO (silhouettes détourées)** | `rembg` (u2netp) détoure les portraits → fond design HK + glow + ombres, layout adaptatif 2-4 ; repli bandes si rembg KO — FAIT (§7.6) |
+| ✅ | **Vérification VISION de cohérence** | Mistral vision regarde le post final ; rejette si l'image ne colle pas au sujet (seuil `BREAKING_COHERENCE_MIN`) — FAIT (§7.6) |
+| ✅ | **Portraits : figures récurrentes + rotation** | 66 figures (`figures.py`) ; pool ~9 portraits solo Commons (filtres groupe/famille/data-viz/peinture + anti même-shooting) ; rotation par article — FAIT (§7.7) |
+| ⏳ | **Isoler une personne d'une photo de groupe** | nécessite reconnaissance faciale (~200 Mo) ; reporté — la rotation solo suffit pour l'instant |
 | ✅ | **Verticales IA/blockchain/quantique** | +18 sources directes + catégories/badges dédiés (IA violet, CRYPTO orange, QUANTIQUE cyan) — FAIT (§5) |
 | ⏳ | **Logos d'entreprise** | reporté : pas de source gratuite HD (Clearbit mort, favicons 48px). Figure emblématique remplit le rôle. Option = banque de logos payante |
 | ⏳ | **Portraits F1 : rotation complète** | curer 2-3 visages vérifiés par vainqueur récurrent (mécanisme `_PORTRAIT_FILES` déjà en place) + override Stroll/Bearman/Albon. Faible priorité (l'infobox couvre déjà les favoris) |
