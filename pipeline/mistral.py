@@ -13,7 +13,10 @@ import urllib.request
 import urllib.error
 
 API_KEY = os.environ.get("MISTRAL_API_KEY", "").strip()
-MODEL   = os.environ.get("MISTRAL_MODEL", "mistral-small-latest")
+# mistral-medium-latest : meilleur rapport qualité/débit sur le plan gratuit
+# (rigueur du jugement + titres FR qui collent + légendes ; 25k tpm / 0.83 rps suffisent).
+# Surcharger via MISTRAL_MODEL si besoin (ex: mistral-small-2506 pour + de débit).
+MODEL   = os.environ.get("MISTRAL_MODEL", "mistral-medium-latest")
 _URL    = "https://api.mistral.ai/v1/chat/completions"
 
 
