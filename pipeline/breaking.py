@@ -36,13 +36,56 @@ _CAT_COLORS = {
     "factcheck": (248, 113, 113),
 }
 
-# Regex : détecte chiffres, %, €, M, Md, k — à surligner en jaune
+# Surlignage JAUNE des chiffres MARQUANTS uniquement (stats), pas des labels.
+# Unite/magnitude facultative apres le nombre (%, EUR, $, milliards, millions, M, Md, k...).
+_UNIT = (r"(?:\s?(?:%|€|\$)"
+         r"|\s?(?:milliards?|millions?|milliers?|mrd|mds?|mn|bn)\b"
+         r"|\s?(?:M|Md|Mds|K|B)\b)")
+_SEP = r"[   .,]"
 _NUM_RE = re.compile(
-    r"(\d[\d\s]*"
-    r"(?:[\.,]\d+)?"
-    r"(?:\s*(?:€|\$|%|M(?:DS?|ILLIARDS?|ILLIONS?)?|K|k))?)",
+    r"(?P<num>\d{1,3}(?:" + _SEP + r"\d{3})+(?:[.,]\d+)?|\d+(?:[.,]\d+)?)"
+    r"(?P<unit>" + _UNIT + r")?",
     re.IGNORECASE,
 )
+
+
+def _is_significant_number(m, text):
+    """Decide si un nombre merite le surlignage (intelligent) :
+    - a une UNITE/magnitude (EUR, %, milliards, M...)  -> OUI ('1 million')
+    - a une VIRGULE ou separateur de milliers          -> OUI ('5,7' / '30 000')
+    - entier nu >= 2 chiffres, pas une annee           -> OUI ('5000')
+    - chiffre COLLE a une lettre, sans unite            -> NON ('T1', '5G', 'GPT-6')
+    - chiffre seul nu / annee                           -> NON ('3', '2026')"""
+    num, unit = m.group("num"), m.group("unit")
+    s, e = m.start("num"), m.end("num")
+    before = text[s - 1] if s > 0 else ""
+    before2 = text[s - 2] if s > 1 else ""
+    after = text[e] if e < len(text) else ""
+    glued = before.isalpha() or (before == "-" and before2.isalpha()) or after.isalpha()
+    if unit and unit.strip():
+        return True
+    if glued:
+        return False
+    if re.search(_SEP, num):
+        return True
+    digits = re.sub(r"\D", "", num)
+    return len(digits) >= 2 and not re.fullmatch(r"(?:19|20)\d\d", num)
+
+
+def _split_segments(text: str) -> list:
+    """Segments (texte, surligne?). Surligne uniquement les nombres significatifs."""
+    segs, pos = [], 0
+    for m in _NUM_RE.finditer(text):
+        if not _is_significant_number(m, text):
+            continue
+        a, b = m.start(), m.end()
+        if a > pos:
+            segs.append((text[pos:a], False))
+        segs.append((text[a:b], True))
+        pos = b
+    if pos < len(text):
+        segs.append((text[pos:], False))
+    return segs
 
 
 def _pil_font(filename: str, size: int) -> ImageFont.FreeTypeFont:
@@ -53,11 +96,11 @@ def _pil_font(filename: str, size: int) -> ImageFont.FreeTypeFont:
 
 
 def _gradient_overlay(img: Image.Image) -> Image.Image:
-    """Gradient noir : transparent en haut, très opaque en bas (60% de la hauteur)."""
+    """Gradient noir : transparent en haut, très opaque en bas (~60% de la hauteur)."""
     w, h = img.size
     overlay = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     draw = ImageDraw.Draw(overlay)
-    grad_start = int(h * 0.30)  # commence à 30% du haut
+    grad_start = int(h * 0.30)
     for y in range(h):
         if y < grad_start:
             alpha = 0
@@ -66,18 +109,6 @@ def _gradient_overlay(img: Image.Image) -> Image.Image:
             alpha = int(245 * (t ** 1.3))
         draw.line([(0, y), (w - 1, y)], fill=(0, 0, 0, alpha))
     return Image.alpha_composite(img.convert("RGBA"), overlay)
-
-
-def _split_segments(text: str) -> list[tuple[str, bool]]:
-    """Découpe le texte en segments (normal=False, chiffre/stat=True)."""
-    parts = _NUM_RE.split(text)
-    segments = []
-    for p in parts:
-        if not p:
-            continue
-        is_num = bool(_NUM_RE.fullmatch(p.strip()) and p.strip())
-        segments.append((p, is_num))
-    return segments
 
 
 def _line_width(segments: list[tuple[str, bool]],
