@@ -182,12 +182,15 @@ def build_image(a: dict) -> tuple[bytes | None, str]:
         return breaking_renderer.make_breaking_image(
             a, portraits[0]["photo_bytes"], badge="BREAKING"), "breaking"
 
-    # Sinon : meilleure photo unique (cascade Wikipédia → Unsplash sur les mots du titre),
-    # puis repli sur la requête image générée par l'IA (concept propre).
-    url = image_fetch.fetch_photo_url(a)
-    if not url and a.get("image_query"):
+    # Pas de dirigeant identifié : on privilégie la PHOTO CONCEPT de la requête IA
+    # (propre et sûre) AVANT la recherche Wikipédia par mots du titre — qui peut matcher
+    # un mot AMBIGU ("Codex" → manuscrit médiéval, "Vision" → œil, "Visa" → document…).
+    url = None
+    if a.get("image_query"):
         url = (image_fetch._fetch_unsplash(a["image_query"])
                or image_fetch._fetch_pexels(a["image_query"]))
+    if not url:
+        url = image_fetch.fetch_photo_url(a)   # repli : Wikipédia entités + Unsplash titre
     data = image_fetch.download_image(url) if url else None
     if data:
         return breaking_renderer.make_breaking_image(a, data, badge="BREAKING"), "breaking"
