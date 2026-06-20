@@ -170,6 +170,11 @@ def build_image(a: dict) -> tuple[bytes | None, str]:
     if len(portraits) >= 2:
         return montage_renderer.make_montage_image(a, portraits, badge="BREAKING"), "montage"
 
+    # 1 seul dirigeant identifié → post photo avec SON portrait (ex: OpenAI → Sam Altman).
+    if len(portraits) == 1:
+        return breaking_renderer.make_breaking_image(
+            a, portraits[0]["photo_bytes"], badge="BREAKING"), "breaking"
+
     # Sinon : meilleure photo unique (cascade Wikipédia → Unsplash sur les mots du titre),
     # puis repli sur la requête image générée par l'IA (concept propre).
     url = image_fetch.fetch_photo_url(a)

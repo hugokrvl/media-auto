@@ -14,9 +14,10 @@ import urllib.request
 import urllib.parse
 import json
 
-PEXELS_API_KEY    = os.environ.get("PEXELS_API_KEY", "")
+# .strip() : une clé collée avec un retour à la ligne casse l'en-tête (→ HTTP 403).
+PEXELS_API_KEY    = os.environ.get("PEXELS_API_KEY", "").strip()
 PEXELS_SEARCH     = "https://api.pexels.com/v1/search"
-UNSPLASH_ACCESS_KEY = os.environ.get("UNSPLASH_ACCESS_KEY", "")
+UNSPLASH_ACCESS_KEY = os.environ.get("UNSPLASH_ACCESS_KEY", "").strip()
 UNSPLASH_SEARCH   = "https://api.unsplash.com/search/photos"
 
 # Mots inutiles pour la recherche (stopwords FR + EN)
