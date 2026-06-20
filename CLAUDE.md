@@ -94,7 +94,7 @@ media-auto/
 │   ├── dataviz.py         # moteur d'infographies HK (5 types)
 │   ├── brand.py           # charte : couleurs, polices, helpers (fr(), variations())
 │   ├── breaking.py        # rendu post photo plein cadre (titre + chiffres jaunes) — §7.1
-│   ├── montage.py         # rendu MONTAGE de 2-4 vrais portraits (ex: patrons IA) — §7.6
+│   ├── montage.py         # MONTAGE PRO : silhouettes détourées (rembg) sur fond design — §7.6
 │   ├── image_fetch.py     # recherche d'images (Wikipédia infobox → Unsplash) — §7.2
 │   ├── llm.py             # sélecteur IA qualité : Mistral → Gemini → (repli Groq) — §4
 │   ├── mistral.py         # client REST Mistral (free tier) — §4
@@ -610,7 +610,10 @@ Pipeline rapide :
    dirigeant emblématique **même non cité** (Strategy→Saylor, Tesla→Musk, Nvidia→Huang,
    OpenAI→Altman…) → vrai visage reconnaissable. Renvoie aussi `companies` (+ domaine).
 5. **Image = héros** (`build_image`), par ordre :
-   - **≥ 2 dirigeants** → **MONTAGE** de leurs vrais portraits (`montage.py`)
+   - **≥ 2 dirigeants** → **MONTAGE PRO** (`montage.py`) : portraits **détourés**
+     (`rembg`, modèle léger `u2netp` ~4 Mo) sur fond dégradé HK + glow couleur catégorie
+     + ombres portées, layout adaptatif. 100% cloud (rembg tourne dans GitHub Actions).
+     Repli auto sur montage en bandes si rembg indisponible.
    - **1 dirigeant / figure de la boîte** → son **portrait** (Wikipédia infobox)
    - sinon → **photo concept** (Unsplash, sur la requête image de l'IA)
    - Filet : si le portrait n'a pas de photo Wikipédia → repli concept (jamais d'image cassée).
