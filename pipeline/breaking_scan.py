@@ -140,19 +140,26 @@ def enrich(a: dict) -> dict:
         "Donne en JSON :\n"
         '{"title_fr":"<titre FR percutant ≤90 car., colle au sujet>",'
         '"subtitle_fr":"<angle en 4-6 mots>",'
-        '"people":[{"name":"<personne CLÉ citée, nom complet>","org":"<société>"}],'
-        '"image_query":"<2-3 mots-clés EN pour illustrer si pas de personne>"}\n'
-        "people : UNIQUEMENT des personnes réelles clés du sujet (dirigeants, etc.), "
-        "max 3, sinon liste vide."
+        '"people":[{"name":"<personne réelle, nom complet>","org":"<société>"}],'
+        '"companies":[{"name":"<entreprise clé>","domain":"<domaine web, ex: tesla.com>"}],'
+        '"image_query":"<2-3 mots-clés EN pour illustrer si ni personne ni entreprise>"}\n'
+        "people : personnes réelles clés (max 3). IMPORTANT : si le sujet porte surtout "
+        "sur une ENTREPRISE, inclus sa FIGURE EMBLÉMATIQUE même non citée — ex : "
+        "Strategy/MicroStrategy→Michael Saylor, Tesla→Elon Musk, Nvidia→Jensen Huang, "
+        "OpenAI→Sam Altman, Apple→Tim Cook, Meta→Mark Zuckerberg, Amazon→Andy Jassy. "
+        "companies : entreprises clés du sujet avec leur domaine web (pour le logo), max 2. "
+        "Sinon listes vides."
     )
-    res = llm.generate_json(prompt, _ENRICH_SYS, max_tokens=500, temperature=0.4)
+    res = llm.generate_json(prompt, _ENRICH_SYS, max_tokens=600, temperature=0.4)
     if res:
         a["title_fr"] = (res.get("title_fr") or a["title"]).strip()[:120]
         a["subtitle_fr"] = (res.get("subtitle_fr") or "").strip()[:50]
         a["people"] = [p for p in (res.get("people") or []) if p.get("name")][:3]
+        a["companies"] = [c for c in (res.get("companies") or []) if c.get("name")][:2]
         a["image_query"] = res.get("image_query", "")
     else:
         a["people"] = []
+        a["companies"] = []
     return a
 
 
