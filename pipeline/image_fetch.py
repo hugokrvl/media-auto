@@ -435,12 +435,12 @@ _GROUP_HINT = (
 )
 
 
-def _commons_portraits(name: str, max_n: int = 4) -> list[str]:
+def _commons_portraits(name: str, max_n: int = 8) -> list[str]:
     """Portraits SOLO probables depuis Commons (exclut groupes/peintures/historique)."""
     last = _norm_word(name.split()[-1])
     params = urllib.parse.urlencode({
         "action": "query", "list": "search", "srsearch": name,
-        "srnamespace": "6", "srlimit": "25", "format": "json"})
+        "srnamespace": "6", "srlimit": "40", "format": "json"})
     try:
         req = urllib.request.Request(f"{_WIKIMEDIA_API}?{params}",
                                      headers={"User-Agent": "HKMedia/1.0 (mediaauto; hugo1actualite@gmail.com)"})
@@ -461,7 +461,7 @@ def _commons_portraits(name: str, max_n: int = 4) -> list[str]:
         if any(g in (" " + tn + " ") for g in _GROUP_HINT):   # écarte les photos de groupe
             continue
         titles.append(t)
-        if len(titles) >= 8:
+        if len(titles) >= 16:
             break
     if not titles:
         return []
