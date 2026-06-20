@@ -3,9 +3,9 @@ groq==0.11.0
 supabase==2.7.4
 matplotlib==3.9.2
 Pillow==10.4.0
-numpy==2.1.2
+numpy>=2.3.0,<3.0.0      # plage imposée par rembg 2.0.76 (>=2.3) ; pip choisit la version compatible avec numba
 tweepy==4.14.0
 requests==2.32.3
 youtube-transcript-api==0.6.2
 rembg==2.0.76          # détourage des portraits pour les montages pro (modèle u2netp léger)
-onnxruntime==1.19.2    # runtime du modèle de détourage
+onnxruntime>=1.23.2,<2.0.0   # runtime du modèle de détourage (plancher imposé par rembg 2.0.76)
