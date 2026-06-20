@@ -71,8 +71,20 @@ def generate_captions(article: dict) -> dict:
         )
         return json.loads(response.choices[0].message.content.strip())
 
+    # Qualité : Mistral/Gemini d'abord (plus rigoureux que le 8b), repli Groq.
+    captions = None
     try:
-        captions = _ask(1200)
+        import llm
+        if llm.provider():
+            captions = llm.generate_json(prompt, SYSTEM_PROMPT, max_tokens=1400, temperature=0.7)
+    except Exception:
+        captions = None
+    if not (captions and all(k in captions for k in ("twitter", "instagram", "linkedin"))):
+        captions = None
+
+    try:
+        if captions is None:
+            captions = _ask(1200)
     except Exception as e:
         print(f"[GENERATOR] captions échec ({type(e).__name__}), repli minimal : {e}")
         # Repli : un post DOIT toujours être créé, même sans captions IA.
@@ -84,6 +96,20 @@ def generate_captions(article: dict) -> dict:
             "instagram": f"{t}\n\n{s}\n\n#{cat} #actualité".strip(),
             "linkedin":  f"{t}\n\n{s}".strip(),
         }
+
+    # Coercion : un modèle peut renvoyer un objet/liste pour un champ → on aplatit en texte.
+    def _as_text(v):
+        if isinstance(v, str):
+            return v.strip()
+        if isinstance(v, dict):
+            return " ".join(_as_text(x) for x in v.values())
+        if isinstance(v, list):
+            return " ".join(_as_text(x) for x in v)
+        return str(v)
+
+    _title = article.get("title_fr") or article.get("title", "")
+    for k in ("twitter", "instagram", "linkedin"):
+        captions[k] = _as_text(captions.get(k, "")) or _title
 
     # Sécurité longueur Twitter
     if len(captions.get("twitter", "")) > 270:
