@@ -171,8 +171,11 @@ def build_image(a: dict) -> tuple[bytes | None, str, str]:
     """Retourne (png_bytes, chart_type, description_image). Montage si ≥2 portraits,
     sinon portrait unique, sinon photo concept. description_image sert à la vérification."""
     portraits = []
-    for p in a.get("people", []):
-        url = image_fetch._wikipedia_pageimage(p["name"])
+    # ROTATION : seed dérivé de l'article → chaque sujet montre une photo différente
+    # de la même personne (pas toujours le même Altman).
+    seed = abs(hash(a.get("url") or a.get("title", "")))
+    for i, p in enumerate(a.get("people", [])):
+        url = image_fetch.portrait_for(p["name"], seed=seed + i)
         data = image_fetch.download_image(url) if url else None
         if data:
             portraits.append({"name": p["name"], "label": p.get("org", ""), "photo_bytes": data})

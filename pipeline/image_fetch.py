@@ -427,6 +427,89 @@ def _wikimedia_cascade(article: dict) -> str | None:
     return None
 
 
+# Indices de photo de GROUPE / événement (mauvais pour un détourage solo)
+_GROUP_HINT = (
+    " and ", " with ", " et ", " meets ", " meeting", " summit", " conference",
+    " ceremony", " award", " group", " panel", " forum", " visit", " signing",
+    " crowd", " audience", " interview with", " hands", " delegation", "  ", " &",
+)
+
+
+def _commons_portraits(name: str, max_n: int = 4) -> list[str]:
+    """Portraits SOLO probables depuis Commons (exclut groupes/peintures/historique)."""
+    last = _norm_word(name.split()[-1])
+    params = urllib.parse.urlencode({
+        "action": "query", "list": "search", "srsearch": name,
+        "srnamespace": "6", "srlimit": "25", "format": "json"})
+    try:
+        req = urllib.request.Request(f"{_WIKIMEDIA_API}?{params}",
+                                     headers={"User-Agent": "HKMedia/1.0 (mediaauto; hugo1actualite@gmail.com)"})
+        with urllib.request.urlopen(req, timeout=10) as r:
+            data = json.loads(r.read())
+    except Exception:
+        return []
+    titles = []
+    for it in data.get("query", {}).get("search", []):
+        t = it.get("title", "")
+        if not t.lower().endswith((".jpg", ".jpeg", ".png")):
+            continue
+        tn = _norm_word(t)
+        if last not in tn:
+            continue
+        if any(s in tn for s in _WIKI_SKIP) or _looks_like_painting(t) or _is_historical(t):
+            continue
+        if any(g in (" " + tn + " ") for g in _GROUP_HINT):   # écarte les photos de groupe
+            continue
+        titles.append(t)
+        if len(titles) >= 8:
+            break
+    if not titles:
+        return []
+    params2 = urllib.parse.urlencode({
+        "action": "query", "titles": "|".join(titles), "prop": "imageinfo",
+        "iiprop": "url|size", "iiurlwidth": "1000", "format": "json"})
+    try:
+        req2 = urllib.request.Request(f"{_WIKIMEDIA_API}?{params2}",
+                                      headers={"User-Agent": "HKMedia/1.0 (mediaauto; hugo1actualite@gmail.com)"})
+        with urllib.request.urlopen(req2, timeout=10) as r:
+            info = json.loads(r.read())
+    except Exception:
+        return []
+    urls = []
+    for pg in info.get("query", {}).get("pages", {}).values():
+        ii = pg.get("imageinfo", [{}])[0]
+        if ii.get("width", 0) < 400:
+            continue
+        u = ii.get("thumburl") or ii.get("url")
+        if u and u not in urls:
+            urls.append(u)
+        if len(urls) >= max_n:
+            break
+    return urls
+
+
+def portrait_pool(name: str) -> list[str]:
+    """Pool de portraits d'une personne : infobox Wikipédia (canonique) + portraits
+    solo Commons. Plusieurs photos → permet la ROTATION (pas toujours la même)."""
+    pool = []
+    inf = _wikipedia_pageimage(name)
+    if inf:
+        pool.append(inf)
+    for u in _commons_portraits(name):
+        if u not in pool:
+            pool.append(u)
+    return pool
+
+
+def portrait_for(name: str, seed: int = 0) -> str | None:
+    """Une URL de portrait, en rotation selon `seed` (ex: hash de l'URL de l'article)
+    → chaque article montre une photo différente de la même personne."""
+    pool = portrait_pool(name)
+    if not pool:
+        return None
+    return pool[abs(int(seed)) % len(pool)]
+
+
 def fetch_photo_url(article: dict, orientation: str = "square") -> str | None:
     """
     Cherche une photo libre de droits.
