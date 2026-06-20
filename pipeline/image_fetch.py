@@ -431,7 +431,17 @@ def _wikimedia_cascade(article: dict) -> str | None:
 _GROUP_HINT = (
     " and ", " with ", " et ", " meets ", " meeting", " summit", " conference",
     " ceremony", " award", " group", " panel", " forum", " visit", " signing",
-    " crowd", " audience", " interview with", " hands", " delegation", "  ", " &",
+    " crowd", " audience", " interview with", " hands", " delegation", " &",
+    " y ", " calls on", " president", " minister", " prime ", " commission",
+    " palacio", " palace", " visite", " rencontre", " congress", " parliament",
+)
+# Fichiers qui contiennent le nom mais ne sont PAS un portrait (data-viz, logo, etc.)
+_NOT_PORTRAIT = (
+    "net worth", "networth", "wealth", "timeline", "stock", "price", "market cap",
+    "marketcap", "chart", "graph", "diagram", "plot", "statistics", "data",
+    "logo", "signature", "tweet", "screenshot", "quote", "cartoon", "caricature",
+    "sketch", "drawing", "map", "wordmark", "infographic", "revenue", "valuation",
+    "share", "stocks", "earnings",
 )
 
 
@@ -453,12 +463,17 @@ def _commons_portraits(name: str, max_n: int = 8) -> list[str]:
         t = it.get("title", "")
         if not t.lower().endswith((".jpg", ".jpeg", ".png")):
             continue
-        tn = _norm_word(t)
+        # Normalise : "File:", "_", ponctuation → espaces (vrais bords de mots)
+        tn = " " + re.sub(r"[^a-z0-9]+", " ", _norm_word(t)).strip() + " "
         if last not in tn:
+            continue
+        if tn.count(f" {last} ") > 1:     # nom de famille 2+ fois = famille/groupe
             continue
         if any(s in tn for s in _WIKI_SKIP) or _looks_like_painting(t) or _is_historical(t):
             continue
-        if any(g in (" " + tn + " ") for g in _GROUP_HINT):   # écarte les photos de groupe
+        if any(s in tn for s in _NOT_PORTRAIT):     # écarte graphiques/logos/data-viz
+            continue
+        if any(g in tn for g in _GROUP_HINT):       # écarte les photos de groupe
             continue
         titles.append(t)
         if len(titles) >= 16:
