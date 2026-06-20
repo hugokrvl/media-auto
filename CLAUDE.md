@@ -614,7 +614,15 @@ Pipeline rapide :
    - **1 dirigeant / figure de la boîte** → son **portrait** (Wikipédia infobox)
    - sinon → **photo concept** (Unsplash, sur la requête image de l'IA)
    - Filet : si le portrait n'a pas de photo Wikipédia → repli concept (jamais d'image cassée).
-6. Légende (`generator`, Mistral) + sauvegarde Supabase (`chart_type` = `breaking`/`montage`).
+   - **Anti mot-ambigu** : sans dirigeant, on prend la photo CONCEPT (requête IA) AVANT la
+     cascade Wikipédia par mots du titre (sinon « Codex » → manuscrit médiéval, « Visa » → document).
+6. **VÉRIFICATION VISION** (`verify_coherence`, Mistral vision `generate_json_image`) :
+   l'IA **regarde le post final** (image + titre) et juge si l'image illustre vraiment le
+   sujet (`score 0-10`). Un portrait d'une personne liée OU une photo concept = cohérent ;
+   rejet seulement si l'image n'a MANIFESTEMENT rien à voir. Sous `BREAKING_COHERENCE_MIN`
+   (défaut 5) → **post ignoré** (jamais publié). Ex validé : Altman 10/10 publié,
+   manuscrit « Bible du Diable » 2/10 rejeté. (Si Mistral indispo → on ne bloque pas.)
+7. Légende (`generator`, Mistral) + sauvegarde Supabase (`chart_type` = `breaking`/`montage`).
 
 > Logos d'entreprise : abandonnés — aucune source gratuite haute résolution (Clearbit mort,
 > favicons 48px pixelisés, Wikipédia incohérent). La **figure emblématique** remplit ce rôle.
@@ -631,9 +639,10 @@ un label (`T1`, `5G`, `GPT-6`), un chiffre seul, ou une année (`2026`).
   body `{"ref":"main"}`, header `Authorization: Bearer <PAT fine-grained, Actions: write>`.
   Succès = **204**. C'est ça qui garantit le temps réel (le cron GitHub natif tardait/sautait).
 
-Réglages env : `BREAKING_RECENT_MIN`, `BREAKING_MAX_PER_SCAN`, `BREAKING_SCORE_MIN`.
+Réglages env : `BREAKING_RECENT_MIN`, `BREAKING_MAX_PER_SCAN`, `BREAKING_SCORE_MIN`,
+`BREAKING_COHERENCE_MIN` (seuil vérif vision).
 Test local (sans Supabase) : `fetch_candidates()` → `judge()` → `enrich()` → `build_image()`
-(charger `MISTRAL_API_KEY` depuis `.env`).
+→ `verify_coherence()` (charger `MISTRAL_API_KEY` depuis `.env`).
 
 ---
 
