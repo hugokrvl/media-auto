@@ -31,8 +31,10 @@ avec **validation humaine** avant publication. Tourne chaque nuit à 1h (Paris) 
 GitHub Actions (cron 23:00 UTC = 1h Paris)  ← rubrique « ÉTUDES DATA » (100% dataviz)
   → pipeline/main.py  (orchestrateur)
       1. scraper.py        RSS + YouTube + Email → articles des dernières 24h
+         (+ article_fetch.py : texte COMPLET des articles ouverts → plus de chiffres — §4/§5)
       2. analyzer.py       Groq → score, vérif, tri ; n'enrichit QUE le chiffrable (+ insight)
-      2bis. dedup.py       new / duplicate / update (vs historique 14 j)
+      2bis. opendata.py    + études DONNÉES OUVERTES (Banque mondiale, sans clé) en tête — §5.4
+      2ter. dedup.py       new / duplicate / update (vs historique 14 j)
       3. carousel.py       CARROUSEL 1080×1080 par post : couverture → graphe → à retenir → verdict
                            (réutilise dataviz.py ; articles sans données = ÉCARTÉS → §7.8)
       4. generator.py      captions FR par réseau (Mistral/Gemini, repli Groq)
@@ -98,6 +100,8 @@ media-auto/
 │   ├── analyzer.py        # Groq : score / tri / données chart structurées
 │   ├── dedup.py           # doublon vs mise à jour (empreintes sujet + données)
 │   ├── dataviz.py         # moteur d'infographies HK (5 types)
+│   ├── carousel.py        # CARROUSEL « étude data » (couverture→graphe→à retenir→verdict) — §7.8
+│   ├── opendata.py        # études issues de données ouvertes (Banque mondiale, sans clé) — §5.4
 │   ├── brand.py           # charte : couleurs, polices, helpers (fr(), variations())
 │   ├── breaking.py        # rendu post photo plein cadre (titre + chiffres jaunes) — §7.1
 │   ├── montage.py         # MONTAGE PRO : silhouettes détourées (rembg) sur fond design — §7.6
@@ -351,6 +355,34 @@ Tests offline : `python _test_email.py` · test connexion réelle : `python _tes
 - **Profils X / Twitter** et **Instagram** : aucun flux RSS, scraping bloqué/illégal ;
   API payantes (X ~100 $/mois) ou compte business requis (IG Graph). Pour les créateurs
   concernés (Baccino, Hasheur, Chéron) on récupère leur **YouTube + site + newsletter**.
+
+> ⚠️ **Bases de presse payantes (Europresse via ezproxy universitaire, etc.) = NON.**
+> Accès lié à un login étudiant perso (mettre des identifiants d'université dans la CI =
+> interdit + bannissement du compte), licence d'usage personnel/pédagogique, et republier
+> le texte d'articles protégés = problème de droits. Pour des chiffres fiables, on utilise
+> les **données ouvertes** (§5.4), pas la presse payante.
+
+### 5.4 Données ouvertes — études « data » (`pipeline/opendata.py`)
+
+**Source COMPLÉMENTAIRE des articles** (le flux RSS/YouTube/email continue normalement).
+Ici les chiffres sont DÉJÀ propres et vérifiés : on les récupère d'une API publique et on
+construit directement une étude prête (chart_data + titre + sous-titre + **verdict** + points
+clés, **100 % templatés, ZÉRO token IA**). L'étude entre dans le même moteur que les articles :
+dédup → carrousel (§7.8) → captions → Supabase. Marquées `source="Banque mondiale"`,
+`score=9`, `verified=true`, `is_opendata=true`.
+
+- **v1 : Banque mondiale** (`api.worldbank.org`, JSON, **sans clé**) — registre `STUDIES` de
+  ~10 études : classements de pays (`compare` → barres : PIB, PIB/hab., croissance, inflation,
+  chômage, population, internet, R&D) et séries France (`series` → courbe : PIB 15 ans,
+  inflation 12 ans). Valeurs en `Md$` / `%` / `hab.` selon l'indicateur.
+- **Rotation quotidienne** (`fetch_studies`) : un sous-ensemble différent chaque jour ;
+  plafond `OPENDATA_MAX` (défaut 2/nuit). Le **dédup** écarte une donnée inchangée → pas de
+  répétition (les stats officielles bougent ~1×/an).
+- **Placées EN TÊTE** du flux nocturne (données les plus fiables), puis les articles.
+- **Robuste** : toute erreur réseau/API → l'étude est ignorée, le flux articles continue seul.
+- **Extensible** : ajouter Eurostat / FRED / INSEE = écrire un fetcher + l'ajouter au registre.
+- Réglages env : `OPENDATA_ENABLED` (1/0), `OPENDATA_MAX` (2), `OPENDATA_TIMEOUT`.
+- Test offline (builders + rendu, sans réseau) : `python opendata.py` (→ `test_od_*.png`).
 
 ---
 

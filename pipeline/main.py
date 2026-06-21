@@ -11,6 +11,7 @@ import re
 import unicodedata
 import dedup
 import carousel
+import opendata
 from scraper import fetch_articles
 from analyzer import analyze_articles
 from generator import generate_captions
@@ -20,6 +21,7 @@ from notifier import notify_pipeline_done
 # Types qui portent de vraies données chiffrées (le reste est écarté du flux data).
 DATA_TYPES = {"kpi", "bar", "donut", "courbe", "line"}
 MAX_POSTS = int(os.environ.get("NIGHTLY_MAX_POSTS", "7"))
+OPENDATA_MAX = int(os.environ.get("OPENDATA_MAX", "2"))   # études open data/nuit (en + des articles)
 
 
 def _slugify(text: str) -> str:
@@ -42,21 +44,28 @@ def run():
 
     print("=== MediaAuto Pipeline (études data) démarré ===")
 
-    # 1. Scraping
+    # 1. Scraping articles (RSS / YouTube / email)
     articles = fetch_articles(hours_back=24)
-    if not articles:
+
+    # 2. Analyse + tri (triage 8b → enrichissement 70b ; n'enrichit que le chiffrable)
+    selected = analyze_articles(articles) if articles else []
+
+    # 2bis. Études OPEN DATA (Banque mondiale…) — en COMPLÉMENT des articles : chiffres
+    # officiels déjà prêts (zéro token IA). Le dédup en aval évite de reposter l'inchangé.
+    studies = []
+    try:
+        studies = opendata.fetch_studies(max_n=OPENDATA_MAX)
+        if studies:
+            print(f"[MAIN] {len(studies)} étude(s) open data récupérée(s)")
+    except Exception as e:
+        print(f"[MAIN] open data indisponible : {e}")
+
+    if not selected and not studies:
         notify_pipeline_done(0)
-        print("[MAIN] Aucun article trouvé.")
+        print("[MAIN] Rien à publier.")
         return
 
-    # 2. Analyse + tri
-    selected = analyze_articles(articles)
-    if not selected:
-        notify_pipeline_done(0)
-        print("[MAIN] Aucun article retenu après analyse.")
-        return
-
-    # 2bis. Dédup intelligent — charge l'historique récent (résilient si indispo)
+    # 2ter. Dédup intelligent — charge l'historique récent (résilient si indispo)
     try:
         history = get_recent_history(days=14)
         print(f"[MAIN] Historique dédup : {len(history)} posts des 14 derniers jours")
@@ -68,6 +77,8 @@ def run():
     # Priorité aux graphiques les plus parlants ; les articles sans données sont écartés.
     _CHART_PRIORITY = {"kpi": 0, "bar": 1, "donut": 2, "courbe": 3, "line": 3, "infographic": 10}
     selected.sort(key=lambda a: _CHART_PRIORITY.get(a.get("chart_type", "infographic"), 10))
+    # Études open data en TÊTE (données officielles = les plus fiables), puis les articles.
+    selected = studies + selected
 
     dups = updates = skipped = 0
     for i, article in enumerate(selected):
