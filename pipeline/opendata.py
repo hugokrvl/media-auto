@@ -17,6 +17,7 @@ Robuste : toute erreur réseau/API → l'étude est ignorée (le flux articles c
 import datetime
 import json
 import os
+import time
 import xml.etree.ElementTree as ET
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
@@ -137,10 +138,19 @@ def _wb_get(path: str, params: dict) -> list:
 
 
 def _wb_compare(indicator: str, isos: list) -> list:
-    """Dernière valeur connue par pays (mrnev=1)."""
-    recs = _wb_get(f"country/{';'.join(isos)}/indicator/{indicator}", {"mrnev": 1})
-    return [{"iso3": r.get("countryiso3code"), "value": r.get("value"), "year": r.get("date")}
-            for r in recs]
+    """Dernière valeur NON NULLE par pays sur une fenêtre de 6 ans. (Plus robuste que
+    `mrnev=1`, qui renvoie un HTTP 400 sur certains indicateurs comme FP.CPI.TOTL.ZG.)"""
+    end = datetime.date.today().year
+    recs = _wb_get(f"country/{';'.join(isos)}/indicator/{indicator}",
+                   {"date": f"{end - 5}:{end}", "per_page": 4000})
+    latest = {}
+    for r in recs:
+        iso, v, y = r.get("countryiso3code"), r.get("value"), r.get("date")
+        if v is None or not iso or not str(y).isdigit():
+            continue
+        if iso not in latest or int(y) > int(latest[iso][1]):
+            latest[iso] = (v, y)
+    return [{"iso3": iso, "value": v, "year": y} for iso, (v, y) in latest.items()]
 
 
 def _wb_series(indicator: str, country: str, years: int) -> list:
@@ -324,9 +334,17 @@ def _insee_series(idbank: str, years: int) -> list:
     """Série INSEE par idBank → moyenne ANNUELLE (gère mensuel/trimestriel via l'année period[:4])."""
     start = datetime.date.today().year - years
     url = f"https://bdm.insee.fr/series/sdmx/data/SERIES_BDM/{idbank}?startPeriod={start}"
-    req = Request(url, headers={"User-Agent": _UA, "Accept": "application/xml"})
-    with urlopen(req, timeout=TIMEOUT) as r:
-        raw = r.read()
+    raw = None
+    for attempt in range(3):                      # BDM parfois lent → petit retry (timeout SSL)
+        try:
+            req = Request(url, headers={"User-Agent": _UA, "Accept": "application/xml"})
+            with urlopen(req, timeout=TIMEOUT + 10) as r:
+                raw = r.read()
+            break
+        except Exception:
+            if attempt == 2:
+                raise
+            time.sleep(2)
     by_year = {}
     for period, val in _insee_obs(raw):
         y = str(period)[:4]
