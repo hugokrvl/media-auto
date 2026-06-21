@@ -319,6 +319,22 @@ nav { display: flex; gap: 4px; }
 }
 .btn-preview:hover { border-color: var(--yellow-dim); }
 
+.btn-delete {
+  background: rgba(239,68,68,0.08);
+  border: 1px solid rgba(239,68,68,0.4);
+  color: #f87171;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 8px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s;
+}
+.btn-delete:hover { background: rgba(239,68,68,0.9); color: #fff; border-color: #ef4444; }
+.btn-delete:disabled { opacity: 0.5; cursor: default; }
+
 /* Status badges */
 .status-badge {
   display: inline-flex;

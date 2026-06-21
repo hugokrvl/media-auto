@@ -130,11 +130,13 @@ function makeCard(post) {
         <div class="card-actions">
           <button class="btn-approve" onclick="approvePost('${post.id}', this)">✓ Approuver</button>
           <button class="btn-preview" onclick="openModal('${post.id}')">👁 Voir</button>
+          <button class="btn-delete" title="Supprimer définitivement ce post" onclick="deletePost('${post.id}', this)">🗑 Supprimer</button>
         </div>
       ` : `
         <div class="card-actions">
           <button class="btn-preview" style="flex:1" onclick="openModal('${post.id}')">👁 Voir le post</button>
           ${post.status === "approved" ? `<button class="btn-approve" onclick="markPosted('${post.id}', this)">📤 Marquer publié</button>` : ""}
+          <button class="btn-delete" title="Supprimer définitivement ce post" onclick="deletePost('${post.id}', this)">🗑</button>
         </div>
       `}
     </div>
@@ -249,6 +251,44 @@ async function supabaseUpdate(id, data) {
       "Prefer": "return=minimal",
     },
     body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+}
+
+// Suppression manuelle d'un post (irréversible — confirmation obligatoire)
+async function deletePost(postId, btn) {
+  const post = allPosts.find(p => p.id === postId);
+  const titre = (post && post.article_title) ? post.article_title : "ce post";
+  if (!confirm(`Supprimer définitivement ce post ?\n\n« ${titre} »\n\nCette action est irréversible.`)) return;
+
+  const label = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = "…";
+  try {
+    await supabaseDelete(postId);
+    allPosts = allPosts.filter(p => p.id !== postId);
+    const card = btn.closest(".post-card");
+    if (card) card.remove();
+    updateStats();
+    // Plus aucune carte affichée → réafficher l'état vide
+    if (!document.querySelectorAll("#posts-grid .post-card").length) {
+      document.getElementById("empty-state").style.display = "block";
+    }
+  } catch (err) {
+    btn.disabled = false;
+    btn.textContent = label;
+    alert("Erreur lors de la suppression : " + err.message);
+  }
+}
+
+async function supabaseDelete(id) {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/posts?id=eq.${id}`, {
+    method: "DELETE",
+    headers: {
+      "apikey": SUPABASE_ANON_KEY,
+      "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+      "Prefer": "return=minimal",
+    },
   });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
 }
