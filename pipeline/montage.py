@@ -108,48 +108,78 @@ def _make_pro(article: dict, cutouts: list, badge: str | None) -> bytes:
                 fill=(int(14 + 16 * t), int(16 + 18 * t), int(24 + 26 * t)))
     img = img.convert("RGBA")
 
-    PH = 660 if n <= 2 else 560
-    base_y = 700
-    xs = [int(SIZE * (i + 0.5) / n) for i in range(n)]
+    PH = 662 if n <= 2 else 566
+    base_y = 706
+    overlap = 0.10 if n <= 2 else 0.16
+    MAXW = SIZE - 56                       # le groupe doit tenir dans le cadre
 
-    for (p, ph), cx in zip(cutouts, xs):
-        w = int(PH * ph.width / ph.height)
-        ph2 = ph.resize((w, PH), Image.LANCZOS)
-        x, y = cx - w // 2, base_y - PH
-        # glow radial couleur catégorie
-        glow = Image.new("RGBA", (SIZE, SIZE), (0, 0, 0, 0))
-        ImageDraw.Draw(glow).ellipse([cx - 230, y + 40, cx + 230, y + 470], fill=(*cat, 85))
-        img.alpha_composite(glow.filter(ImageFilter.GaussianBlur(70)))
-        # ombre portée
-        sh = Image.new("RGBA", (SIZE, SIZE), (0, 0, 0, 0))
-        blk = Image.new("RGBA", ph2.size, (0, 0, 0, 0))
-        blk.putalpha(ph2.split()[3])
-        sh.paste(Image.new("RGBA", ph2.size, (0, 0, 0, 170)), (x + 16, y + 20), blk)
-        img.alpha_composite(sh.filter(ImageFilter.GaussianBlur(14)))
-        # personne
-        img.alpha_composite(ph2, (x, y))
+    def _layout(ph_h):
+        sz = [max(1, int(ph_h * ph.width / ph.height)) for _, ph in cutouts]
+        lf, cur = [], 0
+        for i, w in enumerate(sz):
+            lf.append(cur)
+            if i < n - 1:
+                cur += w - int(min(w, sz[i + 1]) * overlap)
+        return sz, lf, cur + sz[-1]
 
-    # Dégradé sombre bas (lisibilité du titre)
+    # Positionnement avec CHEVAUCHEMENT → un seul groupe soudé ("casting" de poster)
+    # plutôt que des visages isolés. Si trop large (portraits larges), on réduit la hauteur.
+    sizes, lefts, total = _layout(PH)
+    if total > MAXW:
+        PH = int(PH * MAXW / total)
+        sizes, lefts, total = _layout(PH)
+    top_y = base_y - PH
+    shift = (SIZE - total) // 2
+    lefts = [x + shift for x in lefts]
+    xs = [lefts[i] + sizes[i] // 2 for i in range(n)]
+    gcx = sum(xs) // n
+
+    # 1) UNE seule lumière d'ambiance derrière tout le groupe (couleur catégorie)
+    glow = Image.new("RGBA", (SIZE, SIZE), (0, 0, 0, 0))
+    ImageDraw.Draw(glow).ellipse([gcx - 380, top_y - 30, gcx + 380, top_y + 540],
+                                 fill=(*cat, 78))
+    img.alpha_composite(glow.filter(ImageFilter.GaussianBlur(130)))
+
+    # 2) Ombre au sol COMMUNE → les figures reposent sur le même plan
+    floor = Image.new("RGBA", (SIZE, SIZE), (0, 0, 0, 0))
+    ImageDraw.Draw(floor).ellipse([lefts[0] - 30, base_y - 58,
+                                   lefts[-1] + sizes[-1] + 30, base_y + 44], fill=(0, 0, 0, 160))
+    img.alpha_composite(floor.filter(ImageFilter.GaussianBlur(42)))
+
+    # 3) Figures du BORD vers le CENTRE (le centre passe devant → cohésion de groupe).
+    #    Halo sombre derrière chaque silhouette = sépare les figures qui se chevauchent.
+    for i in sorted(range(n), key=lambda k: -abs(k - (n - 1) / 2)):
+        p, ph = cutouts[i]
+        ph2 = ph.resize((sizes[i], PH), Image.LANCZOS)
+        x = lefts[i]
+        sep = Image.new("RGBA", (SIZE, SIZE), (0, 0, 0, 0))
+        sep.paste(Image.new("RGBA", ph2.size, (0, 0, 0, 205)), (x, top_y + 6), ph2.split()[3])
+        img.alpha_composite(sep.filter(ImageFilter.GaussianBlur(20)))
+        img.alpha_composite(ph2, (x, top_y))
+
+    # Dégradé sombre bas (lisibilité titre + étiquettes)
     grad = Image.new("RGBA", (SIZE, SIZE), (0, 0, 0, 0))
     gd = ImageDraw.Draw(grad)
-    g0 = 360
+    g0 = 380
     for yy in range(g0, SIZE):
         gd.line([(0, yy), (SIZE, yy)],
                 fill=(10, 11, 17, int(255 * ((yy - g0) / (SIZE - g0)) ** 1.4)))
     img.alpha_composite(grad)
     draw = ImageDraw.Draw(img, "RGBA")
 
-    # Étiquettes nom/société
+    # Étiquettes nom/société sous chaque visage (ombre portée pour la lisibilité)
     f_nm = _pil_font("Anton-Regular.ttf", 30)
     f_org = _pil_font("Barlow-SemiBold.ttf", 19)
     for (p, ph), cx in zip(cutouts, xs):
         last = (p.get("name", "").split()[-1] or p.get("name", "")).upper()
         nb = f_nm.getbbox(last)
-        draw.text((cx - (nb[2] - nb[0]) // 2, 612), last, font=f_nm, fill=_WHITE)
+        nx = cx - (nb[2] - nb[0]) // 2
+        draw.text((nx + 2, 616), last, font=f_nm, fill=(0, 0, 0, 190))
+        draw.text((nx, 614), last, font=f_nm, fill=_WHITE)
         org = p.get("label", "")
         if org:
             ob = f_org.getbbox(org)
-            draw.text((cx - (ob[2] - ob[0]) // 2, 650), org, font=f_org, fill=_MUSTARD)
+            draw.text((cx - (ob[2] - ob[0]) // 2, 652), org, font=f_org, fill=_MUSTARD)
 
     # Cadre + badges + HK
     draw.rectangle([8, 8, SIZE - 8, SIZE - 8], outline=(*_MUSTARD, 230), width=16)

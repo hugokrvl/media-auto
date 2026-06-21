@@ -170,27 +170,37 @@ def enrich(a: dict) -> dict:
 def build_image(a: dict) -> tuple[bytes | None, str, str]:
     """Retourne (png_bytes, chart_type, description_image). Montage si ≥2 portraits,
     sinon portrait unique, sinon photo concept. description_image sert à la vérification."""
-    portraits = []
-    # ROTATION : seed dérivé de l'article → chaque sujet montre une photo différente
-    # de la même personne (pas toujours le même Altman).
+    people = a.get("people", [])
     seed = abs(hash(a.get("url") or a.get("title", "")))
-    for i, p in enumerate(a.get("people", [])):
-        url = image_fetch.portrait_for(p["name"], seed=seed + i)
+
+    # MONTAGE : on n'assemble QUE des portraits CANONIQUES (infobox Wikipédia) → jamais
+    # une photo de groupe / meme / cliché bizarre. La variété (rotation) est réservée au
+    # portrait unique, où le risque est moindre.
+    canon = []
+    for p in people:
+        url = image_fetch.portrait_canonical(p["name"])
         data = image_fetch.download_image(url) if url else None
         if data:
-            portraits.append({"name": p["name"], "label": p.get("org", ""), "photo_bytes": data})
+            canon.append({"name": p["name"], "label": p.get("org", ""), "photo_bytes": data})
 
-    if len(portraits) >= 2:
-        names = ", ".join(p["name"] for p in portraits)
-        return (montage_renderer.make_montage_image(a, portraits, badge="BREAKING"),
-                "montage", f"un montage des portraits de {names}")
+    if len(canon) >= 2:
+        names = ", ".join(p["name"] for p in canon[:4])
+        return (montage_renderer.make_montage_image(a, canon, badge="BREAKING"),
+                "montage", f"un montage des portraits officiels de {names}")
 
-    # 1 seul dirigeant identifié → post photo avec SON portrait (ex: OpenAI → Sam Altman).
-    if len(portraits) == 1:
-        p = portraits[0]
-        desc = f"un portrait de {p['name']}" + (f" ({p['label']})" if p["label"] else "")
-        return (breaking_renderer.make_breaking_image(a, p["photo_bytes"], badge="BREAKING"),
-                "breaking", desc)
+    # 1 dirigeant → portrait unique, en ROTATION (variété). Repli sur le canonique.
+    if people:
+        p0 = people[0]
+        url = image_fetch.portrait_for(p0["name"], seed=seed)
+        data = image_fetch.download_image(url) if url else None
+        if not data and canon:
+            data = canon[0]["photo_bytes"]
+            p0 = {"name": canon[0]["name"], "org": canon[0]["label"]}
+        if data:
+            label = p0.get("org", "")
+            desc = f"un portrait de {p0['name']}" + (f" ({label})" if label else "")
+            return (breaking_renderer.make_breaking_image(a, data, badge="BREAKING"),
+                    "breaking", desc)
 
     # Pas de dirigeant identifié : on privilégie la PHOTO CONCEPT de la requête IA
     # (propre et sûre) AVANT la recherche Wikipédia par mots du titre — qui peut matcher

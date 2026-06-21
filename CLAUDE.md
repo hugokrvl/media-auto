@@ -756,7 +756,19 @@ entreprise → sa figure emblématique (fiable, vs prompt seul) et (b) définir 
 
 **Rotation** (`image_fetch.portrait_for(name, seed)`) : `seed` dérivé de l'URL de l'article
 → chaque sujet montre une **photo différente** de la même personne. Dans `breaking_scan`,
-`build_image` utilise `portrait_for(p["name"], seed=hash(url)+i)`.
+le **portrait unique** utilise `portrait_for` (variété).
+
+> ⚠️ **Montages = portraits CANONIQUES uniquement** (`image_fetch.portrait_canonical` =
+> image d'infobox Wikipédia, PAS la rotation Commons). Raison : la rotation Commons laissait
+> passer des clichés ratés (photo de groupe étiquetée « Starmer », Torvalds torse nu,
+> cosplayers…) ; sur un montage de 2-3 visages le risque est multiplié. `build_image`
+> n'assemble un montage que si **≥2 portraits canoniques** sont trouvés, sinon portrait unique
+> (rotation) ou photo concept.
+
+**Composition du montage** (`montage._make_pro`) : figures **soudées en un seul groupe**
+(chevauchement type « casting », **une seule lumière d'ambiance** couleur catégorie, ombre au
+sol commune, centre devant, hauteur auto-réduite si le groupe dépasse le cadre) — au lieu de
+visages isolés à halos séparés. Repli `_make_strips` (bandes) si le détourage rembg échoue.
 
 > Photos de GROUPE : isoler **une** personne d'un groupe = reconnaissance faciale (lourde,
 > ~200 Mo) → **reportée**. On filtre les groupes et on tourne sur les photos solo (suffisant :

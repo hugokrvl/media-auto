@@ -552,6 +552,14 @@ def portrait_for(name: str, seed: int = 0) -> str | None:
     return pool[abs(int(seed)) % len(pool)]
 
 
+def portrait_canonical(name: str) -> str | None:
+    """UNIQUEMENT l'image d'infobox Wikipédia = le portrait OFFICIEL/canonique de la
+    personne. Pas la rotation Commons (qui ramène parfois une photo de groupe, un meme
+    ou un cliché bizarre). À utiliser pour les MONTAGES, où la fiabilité prime sur la
+    variété : un montage de 2-3 visages multiplie le risque qu'un seul soit raté."""
+    return _wikipedia_pageimage(name)
+
+
 def fetch_photo_url(article: dict, orientation: str = "square") -> str | None:
     """
     Cherche une photo libre de droits.
