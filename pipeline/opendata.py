@@ -17,6 +17,7 @@ Robuste : toute erreur réseau/API → l'étude est ignorée (le flux articles c
 import datetime
 import json
 import os
+import xml.etree.ElementTree as ET
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
@@ -113,6 +114,16 @@ STUDIES = [
      "top": 6, "scale": 1, "unit": "%", "category": "finance",
      "title": "Le chômage en Europe : le classement",
      "subtitle": "Taux de chômage · Eurostat {year}"},
+
+    # ── INSEE · BDM (données FRANÇAISES, SANS clé, XML SDMX) — séries par idBank. ──
+    {"id": "fr_inflation_insee", "provider": "insee", "kind": "series", "idbank": "001761313",
+     "years": 12, "scale": 1, "unit": "%", "country_fr": "L'inflation en France", "category": "finance",
+     "title": "L'inflation en France sur 12 ans",
+     "subtitle": "Glissement annuel des prix · INSEE"},
+    {"id": "fr_chomage_insee", "provider": "insee", "kind": "series", "idbank": "001688370",
+     "years": 12, "scale": 1, "unit": "%", "country_fr": "Le chômage en France", "category": "finance",
+     "title": "Le chômage en France sur 12 ans",
+     "subtitle": "Taux de chômage (BIT), moyenne annuelle · INSEE"},
 ]
 
 
@@ -148,6 +159,9 @@ def _study_dict(defn, chart_type, chart_data, key_points, insight, year):
     elif provider == "eurostat":
         source = "Eurostat"
         url = f"https://ec.europa.eu/eurostat/databrowser/view/{defn.get('dataset', '')}"
+    elif provider == "insee":
+        source = "INSEE"
+        url = f"https://www.insee.fr/fr/statistiques/serie/{defn.get('idbank', '')}"
     else:
         source = "Banque mondiale"
         url = f"https://data.worldbank.org/indicator/{defn.get('indicator', '')}"
@@ -287,6 +301,40 @@ def _js_latest_by_geo(js: dict, prefer: dict) -> tuple:
     return out, year
 
 
+# ── INSEE · BDM (XML SDMX 2.1, sans clé) ─────────────────────────────────────
+def _insee_obs(raw: bytes) -> list:
+    """Observations (period, valeur) d'une réponse SDMX-ML : <Obs TIME_PERIOD=.. OBS_VALUE=../>."""
+    try:
+        root = ET.fromstring(raw)
+    except Exception:
+        return []
+    out = []
+    for el in root.iter():
+        if el.tag.rsplit("}", 1)[-1] == "Obs":          # tag local "Obs" (avec ou sans namespace)
+            t, v = el.attrib.get("TIME_PERIOD"), el.attrib.get("OBS_VALUE")
+            if t and v not in (None, ""):
+                try:
+                    out.append((t, float(v)))
+                except Exception:
+                    pass
+    return out
+
+
+def _insee_series(idbank: str, years: int) -> list:
+    """Série INSEE par idBank → moyenne ANNUELLE (gère mensuel/trimestriel via l'année period[:4])."""
+    start = datetime.date.today().year - years
+    url = f"https://bdm.insee.fr/series/sdmx/data/SERIES_BDM/{idbank}?startPeriod={start}"
+    req = Request(url, headers={"User-Agent": _UA, "Accept": "application/xml"})
+    with urlopen(req, timeout=TIMEOUT) as r:
+        raw = r.read()
+    by_year = {}
+    for period, val in _insee_obs(raw):
+        y = str(period)[:4]
+        if y.isdigit():
+            by_year.setdefault(y, []).append(val)
+    return [{"year": int(y), "value": sum(vs) / len(vs)} for y, vs in sorted(by_year.items())]
+
+
 def build_study(defn):
     provider = defn.get("provider", "wb")
     if provider == "fred":
@@ -298,6 +346,8 @@ def build_study(defn):
         by_geo, year = _js_latest_by_geo(js, defn.get("filters", {}))
         recs = [{"iso3": c, "value": v, "year": year} for c, v in by_geo.items()]
         return _build_compare(defn, recs, labels=_EU_FR, home="FR")
+    if provider == "insee":
+        return _build_series(defn, _insee_series(defn["idbank"], defn.get("years", 12)))
     if defn["kind"] == "compare":
         return _build_compare(defn, _wb_compare(defn["indicator"], defn["countries"]))
     return _build_series(defn, _wb_series(defn["indicator"], defn["country"], defn.get("years", 12)))
@@ -363,12 +413,33 @@ if __name__ == "__main__":
                         labels=_EU_FR, home="FR")
     print(f"\n[JSON-stat OK] by_geo={by_geo} year={yr}")
 
-    for s in (comp, ser, rate, eu):
+    # INSEE : test du parseur XML SDMX (Obs namespacé, attributs TIME_PERIOD/OBS_VALUE).
+    insee_xml = b"""<?xml version="1.0" encoding="UTF-8"?>
+<StructureSpecificData xmlns="http://www.sdmx.org/resources/sdmxml/schemas/v2_1/data/structurespecific">
+  <DataSet><Series IDBANK="001761313">
+    <Obs TIME_PERIOD="2020-06" OBS_VALUE="0.2"/><Obs TIME_PERIOD="2020-12" OBS_VALUE="0.0"/>
+    <Obs TIME_PERIOD="2021-06" OBS_VALUE="1.5"/><Obs TIME_PERIOD="2021-12" OBS_VALUE="2.8"/>
+    <Obs TIME_PERIOD="2022-06" OBS_VALUE="5.8"/><Obs TIME_PERIOD="2022-12" OBS_VALUE="5.9"/>
+    <Obs TIME_PERIOD="2023-06" OBS_VALUE="4.5"/><Obs TIME_PERIOD="2023-12" OBS_VALUE="3.7"/>
+    <Obs TIME_PERIOD="2024-06" OBS_VALUE="2.1"/><Obs TIME_PERIOD="2024-12" OBS_VALUE="1.3"/>
+  </Series></DataSet>
+</StructureSpecificData>"""
+    obs = _insee_obs(insee_xml)
+    assert len(obs) == 10 and obs[0] == ("2020-06", 0.2), obs[:2]
+    by_year = {}
+    for p, v in obs:
+        by_year.setdefault(p[:4], []).append(v)
+    pts = [{"year": int(y), "value": sum(vs) / len(vs)} for y, vs in sorted(by_year.items())]
+    insee = _build_series(next(s for s in STUDIES if s["id"] == "fr_inflation_insee"), pts)
+    print(f"[INSEE OK] {len(obs)} obs → {len(pts)} ans annualisés")
+
+    for s in (comp, ser, rate, eu, insee):
         print(f"\n{s['title']} | {s['subtitle_fr']} | {s['source']}")
         print(f"  insight : {s['insight']}")
         print(f"  points  : {s['key_points']}")
     import carousel
-    for s, name in ((comp, "compare"), (ser, "series"), (rate, "rate"), (eu, "eurostat")):
+    for s, name in ((comp, "compare"), (ser, "series"), (rate, "rate"),
+                    (eu, "eurostat"), (insee, "insee")):
         for i, png in enumerate(carousel.generate_carousel(s), 1):
             open(f"test_od_{name}_{i}.png", "wb").write(png)
         print(f"{name} : carrousel rendu")

@@ -384,6 +384,11 @@ dédup → carrousel (§7.8) → captions → Supabase. Marquées `source="Banqu
   chômage). Parseur JSON-stat maison (`_js_latest_by_geo` : indice plat row-major + repli sur
   la dernière période dispo PAR pays ; `filters` fixe les dimensions unit/na_item/…). Les codes
   de dataset/dimension sont confirmés au 1er run réel — en cas de souci, l'étude est ignorée.
+- **INSEE · BDM** (`bdm.insee.fr/series/sdmx`, **SANS clé** — service ouvert depuis 2015,
+  format **XML SDMX-ML 2.1**) — séries FRANÇAISES par **idBank** (`series` → courbe).
+  v1 : inflation France (idBank `001761313`, glissement annuel) + chômage (`001688370`).
+  Parseur XML (`_insee_obs` : `<Obs TIME_PERIOD OBS_VALUE/>`) + **agrégation annuelle**
+  (`period[:4]`) qui gère mensuel/trimestriel. Ajouter une série = un idBank dans `STUDIES`.
 - **Variation intelligente** (`_build_series`) : un TAUX (%) → variation en **points** (un taux
   0,1 → 5,3 affiche « +5,2 pt », pas « +5200 % ») ; un NIVEAU (PIB…) → variation en **%**.
 - **Rotation quotidienne** (`fetch_studies`) : un sous-ensemble différent chaque jour ;
@@ -391,8 +396,8 @@ dédup → carrousel (§7.8) → captions → Supabase. Marquées `source="Banqu
   répétition (les stats officielles bougent ~1×/an).
 - **Placées EN TÊTE** du flux nocturne (données les plus fiables), puis les articles.
 - **Robuste** : toute erreur réseau/API → l'étude est ignorée, le flux articles continue seul.
-- **Extensible** : 3 fournisseurs branchés (Banque mondiale, FRED, Eurostat) via le champ
-  `provider`. Ajouter INSEE (auth OAuth) = écrire un fetcher + l'ajouter au registre.
+- **Extensible** : **4 fournisseurs** branchés (Banque mondiale, FRED, Eurostat, INSEE) via le
+  champ `provider`. Ajouter une source = écrire un fetcher + l'ajouter au registre `STUDIES`.
 - Réglages env : `OPENDATA_ENABLED` (1/0), `OPENDATA_MAX` (2), `OPENDATA_TIMEOUT`, `FRED_API_KEY`.
 - Test offline (builders + rendu, sans réseau) : `python opendata.py` (→ `test_od_*.png`).
 
@@ -928,6 +933,8 @@ python validate_sources.py     # teste tous les flux RSS + YouTube en réel
 python dataviz.py              # génère test_*.png (rendu des 5 types)
 python gallery.py             # planche-contact de toutes les variantes
 python _test_dedup.py          # logique dédup (offline, 6 cas)
+python _test_pipeline.py       # INTÉGRATION main.run() : open data + dédup + carrousel (offline, stubs)
+python opendata.py             # 4 fournisseurs open data : builders + parseurs + rendus (offline)
 python _test_analyzer.py       # split 2 modèles + digest vidéo (offline, mock)
 python _test_email.py          # filtres email + détection serveur (offline)
 python _test_email_live.py     # connexion IMAP réelle (lit la vraie boîte)
