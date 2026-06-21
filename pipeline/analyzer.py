@@ -59,11 +59,14 @@ Critères PRIORITAIRES pour garder (score ≥ 6) :
 - people/lifestyle sans enjeu (célébrités, rumeurs)
 - contenu hors sujet pour un public francophone (actualité hyperlocale US/UK sans impact global)
 
-Critère BONUS (monte un peu le score, jamais baisser) :
-- potentiel de visualisation de données (chiffres, comparaisons, tendances)
+Critère DÉTERMINANT (ce flux est une rubrique DATA / ÉTUDES, pas l'actu chaude) :
+- l'article doit contenir (ou permettre d'extraire) des CHIFFRES exploitables :
+  montants, %, taux, classements, parts de marché, séries temporelles, comparaisons.
+- monte NETTEMENT le score quand la donnée est riche et chiffrable.
 
-IMPORTANT : une actualité forte et fiable SANS chiffres reste pertinente (→ infographie).
-Ne jette que ce qui est anecdotique, promotionnel, non vérifié ou sans intérêt réel.
+IMPORTANT : l'actualité « chaude » sans angle chiffré est traitée AILLEURS (moteur breaking).
+Ici, REJETTE (keep=false) un article fort mais 100 % qualitatif, sans aucun chiffre :
+il ne ferait qu'une liste de puces, pas une étude. Ne garde que ce qui se met en graphe.
 
 Réponds en JSON EXACTEMENT ainsi :
 {
@@ -95,31 +98,33 @@ ENRICH_SYSTEM = """Tu es un journaliste de data-visualisation. À partir d'un ar
 retenu, tu prépares une infographie en FRANÇAIS avec des données structurées réelles.
 Tu n'inventes JAMAIS de chiffres. Réponds UNIQUEMENT en JSON valide."""
 
-ENRICH_PROMPT = """Prépare l'infographie de cet article. JSON EXACTEMENT ainsi :
+ENRICH_PROMPT = """Prépare une PETITE ÉTUDE DATA (carrousel) à partir de cet article.
+JSON EXACTEMENT ainsi :
 {
-  "title_fr": "<titre court accrocheur EN FRANÇAIS, max 75 caractères>",
-  "subtitle_fr": "<sous-titre court : contexte/période/unité, max 50 caractères>",
+  "title_fr": "<titre court, ANGLE CHIFFRÉ, EN FRANÇAIS, max 75 caractères>",
+  "subtitle_fr": "<source + période + unité, max 50 caractères>",
   "chart_type": "<kpi|donut|bar|courbe|infographic>",
   "chart_data": [<selon chart_type, voir règles>],
-  "key_points": [<2-4 points clés EN FRANÇAIS si chart_type=infographic, sinon []>]
+  "key_points": [<2-4 faits clés CHIFFRÉS et factuels EN FRANÇAIS, TOUJOURS remplis>],
+  "insight": "<le VERDICT en 1 phrase factuelle tirée des chiffres, EN FRANÇAIS, max 160 caractères>"
 }
 
-RÈGLES chart_data (données RÉELLES tirées de l'article) :
+RÈGLES chart_data (données RÉELLES tirées de l'article, JAMAIS inventées) :
 - "kpi"    : 2-3 chiffres clés. [{"label":"Inflation","value":"3.2","unit":"%","evolution":"-0.4"}]
 - "donut"  : répartition/parts. [{"label":"Apple","value":28},{"label":"Samsung","value":22}]
 - "bar"    : comparaison/classement. [{"label":"OpenAI","value":40},{"label":"xAI","value":18}]
 - "courbe" : évolution temporelle. [{"label":"Jan","value":92},{"label":"Fév","value":88}]
-- "infographic" : DERNIER RECOURS SEULEMENT -> chart_data: [], remplis key_points.
+- "infographic" : SEULEMENT si l'article n'a STRICTEMENT aucun chiffre -> chart_data: [].
 
 ORDRE DE PRIORITÉ POUR LE CHOIX DU TYPE (applique le premier qui est possible) :
 1. "kpi"     → s'il y a AU MOINS 1 chiffre clé (montant, %, taux, score, rang…)
 2. "bar"     → s'il y a 2+ valeurs comparables (pays, entreprises, produits…)
 3. "donut"   → s'il y a une répartition en parts dont le total est 100 % ou proche
 4. "courbe"  → s'il y a une série temporelle (mois, trimestres, années…)
-5. "infographic" → UNIQUEMENT si l'article est 100 % qualitatif, sans aucun chiffre ni donnée chiffrable
+5. "infographic" → DERNIER RECOURS (cet article sera écarté du flux data).
 
-Cherche activement des chiffres même implicites : classements, dates, durées, effectifs, budgets.
-"infographic" ne doit représenter qu'une minorité des posts.
+Cherche activement les chiffres même implicites : classements, dates, durées, effectifs, budgets.
+"insight" = une conclusion HONNÊTE et vérifiable tirée des données, jamais une exagération.
 
 Article :
 Titre: __TITLE__
@@ -199,7 +204,7 @@ def _enrich_one(article: dict, summary_override: str = None) -> dict:
                   .replace("__SUMMARY__", summary_override[:1600]))
     else:
         prompt = _fill(ENRICH_PROMPT, article, 600)
-    return _chat(GENERATION_MODEL, ENRICH_SYSTEM, prompt, max_tokens=500)
+    return _chat(GENERATION_MODEL, ENRICH_SYSTEM, prompt, max_tokens=600)
 
 
 def enrich_with_transcript(article: dict) -> dict:
@@ -217,6 +222,7 @@ def enrich_with_transcript(article: dict) -> dict:
         "chart_type": e.get("chart_type", "infographic"),
         "chart_data": e.get("chart_data", []),
         "key_points": e.get("key_points", []),
+        "insight": e.get("insight", ""),
     })
     return article
 
@@ -268,6 +274,7 @@ def analyze_articles(articles: list[dict], max_to_analyze: int = None) -> list[d
                 "chart_type": e.get("chart_type", "infographic"),
                 "chart_data": e.get("chart_data", []),
                 "key_points": e.get("key_points", []),
+                "insight": e.get("insight", ""),
             })
             enriched.append(article)
         except Exception as e:

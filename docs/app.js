@@ -91,6 +91,40 @@ function renderPosts() {
   posts.forEach(post => grid.appendChild(makeCard(post)));
 }
 
+// Média de la carte : carrousel (slides) si présent, sinon image simple.
+function cardMedia(post) {
+  const slides = Array.isArray(post.slides) ? post.slides.filter(Boolean) : [];
+  const net = post.network || "instagram";
+  const fallback = post[`image_${net}`] || 'https://placehold.co/600x600/141414/FFD700?text=MediaAuto';
+  if (slides.length > 1) {
+    return `
+      <div class="card-carousel" data-id="${post.id}" data-idx="0">
+        <img class="card-image" src="${slides[0]}" alt="${esc(post.article_title)}" onclick="openModal('${post.id}')" />
+        <button class="carousel-arrow left" title="Précédent" onclick="event.stopPropagation();carouselNav('${post.id}',-1)">‹</button>
+        <button class="carousel-arrow right" title="Suivant" onclick="event.stopPropagation();carouselNav('${post.id}',1)">›</button>
+        <span class="carousel-counter">1/${slides.length}</span>
+        <span class="carousel-badge">⊞ Carrousel</span>
+      </div>`;
+  }
+  return `<img class="card-image" src="${fallback}" alt="${esc(post.article_title)}" onclick="openModal('${post.id}')" />`;
+}
+
+// Navigation entre les slides d'un carrousel (sur une carte de la grille).
+function carouselNav(postId, dir) {
+  const post = allPosts.find(p => p.id === postId);
+  if (!post || !Array.isArray(post.slides)) return;
+  const slides = post.slides.filter(Boolean);
+  if (slides.length < 2) return;
+  const box = document.querySelector(`.card-carousel[data-id="${postId}"]`);
+  if (!box) return;
+  let idx = (parseInt(box.dataset.idx, 10) || 0) + dir;
+  if (idx < 0) idx = slides.length - 1;
+  if (idx >= slides.length) idx = 0;
+  box.dataset.idx = idx;
+  box.querySelector(".card-image").src = slides[idx];
+  box.querySelector(".carousel-counter").textContent = `${idx + 1}/${slides.length}`;
+}
+
 function makeCard(post) {
   const card = document.createElement("div");
   card.className = `post-card ${post.status}`;
@@ -103,10 +137,7 @@ function makeCard(post) {
   const imageKey = `image_${defaultNet}`;
 
   card.innerHTML = `
-    <img class="card-image"
-         src="${post[imageKey] || 'https://placehold.co/600x600/141414/FFD700?text=MediaAuto'}"
-         alt="${esc(post.article_title)}"
-         onclick="openModal('${post.id}')" />
+    ${cardMedia(post)}
     <div class="card-body">
       <div class="card-meta">
         <span class="badge ${catClass}">${post.category || "—"}</span>
@@ -200,8 +231,11 @@ function selectNet(btn) {
   if (!post) return;
   const card = group.closest(".post-card");
   card.querySelector(".card-caption").textContent = (post[`caption_${net}`] || "").substring(0, 200);
-  const img = card.querySelector(".card-image");
-  img.src = post[`image_${net}`] || img.src;
+  // Carrousel : l'image (slides) est commune aux réseaux → on ne la change pas.
+  if (!card.querySelector(".card-carousel")) {
+    const img = card.querySelector(".card-image");
+    img.src = post[`image_${net}`] || img.src;
+  }
 }
 
 // ── Actions ─────────────────────────────────────────────────────────────────
@@ -304,7 +338,7 @@ function openModal(postId) {
   function renderModal(net) {
     return `
       <h3 style="font-size:14px;font-weight:700;margin-bottom:12px;line-height:1.4">${esc(post.article_title)}</h3>
-      <img src="${post[`image_${net}`] || 'https://placehold.co/600x600/141414/FFD700?text=MediaAuto'}" alt="" />
+      ${_modalMedia(post, net)}
       <div class="modal-tabs">
         ${networks.map(n => `<button class="modal-tab ${n === net ? "active" : ""}" onclick="switchTab('${postId}','${n}')">${n === "twitter" ? "X / Twitter" : n[0].toUpperCase() + n.slice(1)}</button>`).join("")}
       </div>
@@ -320,11 +354,45 @@ function openModal(postId) {
   window._modalNet = activeNet;
 }
 
+// Média de la modale : carrousel (slides) si présent, sinon image du réseau.
+function _modalMedia(post, net) {
+  const slides = Array.isArray(post.slides) ? post.slides.filter(Boolean) : [];
+  if (slides.length > 1) {
+    return `
+      <div class="modal-carousel" data-id="${post.id}" data-idx="0">
+        <img class="modal-slide" src="${slides[0]}" alt="" />
+        <button class="carousel-arrow left" onclick="modalCarouselNav('${post.id}',-1)">‹</button>
+        <button class="carousel-arrow right" onclick="modalCarouselNav('${post.id}',1)">›</button>
+        <span class="carousel-counter">1/${slides.length}</span>
+      </div>`;
+  }
+  return `<img class="modal-slide" src="${post[`image_${net}`] || 'https://placehold.co/600x600/141414/FFD700?text=MediaAuto'}" alt="" />`;
+}
+
+function modalCarouselNav(postId, dir) {
+  const post = allPosts.find(p => p.id === postId);
+  if (!post || !Array.isArray(post.slides)) return;
+  const slides = post.slides.filter(Boolean);
+  if (slides.length < 2) return;
+  const box = document.querySelector(".modal-carousel");
+  if (!box) return;
+  let idx = (parseInt(box.dataset.idx, 10) || 0) + dir;
+  if (idx < 0) idx = slides.length - 1;
+  if (idx >= slides.length) idx = 0;
+  box.dataset.idx = idx;
+  box.querySelector(".modal-slide").src = slides[idx];
+  box.querySelector(".carousel-counter").textContent = `${idx + 1}/${slides.length}`;
+}
+
 function switchTab(postId, net) {
   const post = allPosts.find(p => p.id === postId);
   if (!post) return;
   const mc = document.getElementById("modal-content");
-  mc.querySelector("img").src = post[`image_${net}`] || mc.querySelector("img").src;
+  // Carrousel : slides communs aux réseaux → changer de réseau ne touche pas l'image.
+  if (!mc.querySelector(".modal-carousel")) {
+    const img = mc.querySelector(".modal-slide");
+    if (img) img.src = post[`image_${net}`] || img.src;
+  }
   mc.querySelector(".modal-caption").textContent = post[`caption_${net}`] || "";
   mc.querySelectorAll(".modal-tab").forEach(t => t.classList.toggle("active", t.textContent.toLowerCase().includes(net) || (net === "twitter" && t.textContent.includes("X"))));
 }

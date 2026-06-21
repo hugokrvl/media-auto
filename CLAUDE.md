@@ -28,17 +28,21 @@ avec **validation humaine** avant publication. Tourne chaque nuit à 1h (Paris) 
 ## 1. Architecture & flux
 
 ```
-GitHub Actions (cron 23:00 UTC = 1h Paris)
+GitHub Actions (cron 23:00 UTC = 1h Paris)  ← rubrique « ÉTUDES DATA » (100% dataviz)
   → pipeline/main.py  (orchestrateur)
       1. scraper.py        RSS + YouTube + Email → articles des dernières 24h
-      2. analyzer.py       Groq → score, vérification, tri, données structurées
+      2. analyzer.py       Groq → score, vérif, tri ; n'enrichit QUE le chiffrable (+ insight)
       2bis. dedup.py       new / duplicate / update (vs historique 14 j)
-      3. dataviz.py        matplotlib → PNG 1080×1080 (charte HK)
-      4. generator.py      Groq → captions FR par réseau (X / Instagram / LinkedIn)
-      5. storage.py        Supabase (table posts + bucket post-images)
+      3. carousel.py       CARROUSEL 1080×1080 par post : couverture → graphe → à retenir → verdict
+                           (réutilise dataviz.py ; articles sans données = ÉCARTÉS → §7.8)
+      4. generator.py      captions FR par réseau (Mistral/Gemini, repli Groq)
+      5. storage.py        Supabase (table posts + colonne slides + bucket post-images)
       6. notifier.py       ntfy → notification push téléphone
-  → docs/ (GitHub Pages)   ← VALIDATION HUMAINE (bouton « Approuver »)
+  → docs/ (GitHub Pages)   ← VALIDATION HUMAINE (carrousel + boutons « Approuver » / « Supprimer »)
   → poster/                ← publication après approbation (X/IG/LinkedIn)
+
+  ⚠️ Le nocturne ne fait PLUS de posts photo/news : l'actu « chaude » passe par le
+     moteur breaking temps réel (breaking_scan.py, §7.6). Nocturne = DATA, breaking = NEWS.
 
 GitHub Actions (cron 15 min)  ← 2e entrée, indépendante
   → pipeline/reprocess.py  régénère les posts dont une transcription a été collée
@@ -382,8 +386,13 @@ Direction artistique : **« Data punch » éditorial** · serif fort · jaune mo
 
 ### 7.1 Posts Breaking News (`pipeline/breaking.py`)
 
+> ⚠️ **Plus utilisé par le pipeline nocturne** : depuis le recentrage « études data » (§7.8),
+> `main.py` ne génère plus de posts photo/breaking. `breaking.py` reste utilisé par le
+> **moteur breaking temps réel** (`breaking_scan.py`, §7.6) et `montage.py`. Section conservée
+> pour référence du rendu photo plein cadre.
+
 Posts photo plein cadre pour les articles **score ≥ 8 + vérifiés**, maximum **2/nuit**.
-Générés après les dataviz dans `main.py`, stockés avec `chart_type="breaking"`.
+Stockés avec `chart_type="breaking"`.
 
 **Design** :
 - Photo 1080×1080 (recadrage centre + légère désaturation pour faire ressortir le texte)
@@ -684,6 +693,32 @@ entreprise → sa figure emblématique (fiable, vs prompt seul) et (b) définir 
 > ~9 contextes distincts pour les figures fréquentes).
 > Le mécanisme de rotation existe aussi côté F1 (`scores_renderer._PORTRAIT_FILES`).
 
+### 7.8 Carrousels « étude data » (`pipeline/carousel.py`) — pipeline nocturne
+
+Depuis le recentrage, **chaque post de 1h du matin est un CARROUSEL** : une petite étude
+visuelle de 3-4 slides 1080×1080, au lieu d'une seule image. Format dédié à la **dataviz
+fiable** ; l'actu chaude est gérée par le breaking (§7.6). **Nocturne = DATA, breaking = NEWS.**
+
+**Structure d'un carrousel** (`generate_carousel`, chaque slide protégé par try/except) :
+1. **Couverture** — eyebrow « ÉTUDE DATA », titre serif, **chiffre héros** (le plus gros point), « GLISSEZ ▸ ».
+2. **Graphique** — la dataviz principale (`dataviz.generate_image`, kpi/bar/donut/courbe).
+3. **À retenir** — 2-4 points clés chiffrés (slide omis s'il n'y a pas de `key_points`).
+4. **Le verdict** — le champ `insight` (conclusion factuelle en 1 phrase) + source + CTA.
+
+Toute la charte vient de `dataviz.py` (cadre, tag, monogramme, footer, polices) → look 100 %
+cohérent. **Repli** : si un slide échoue, on renvoie au moins la dataviz principale (jamais
+de post cassé). Tester en local : `python carousel.py` (→ `test_carousel_*.png`).
+
+**Sélection data-only** (`main.py`) : `analyzer.py` n'enrichit que le chiffrable et ajoute un
+champ **`insight`** ; tout article dont `chart_type` reste `infographic` (aucune donnée) est
+**écarté** (`_has_data`). Qualité > quantité : une nuit pauvre en data fera moins de 7 posts
+(plafond `NIGHTLY_MAX_POSTS`, défaut 7).
+
+**Stockage & site** : les URLs des slides vont dans la colonne `slides` (text[], voir §8 —
+**migration requise**). Le site (`docs/`) affiche un carrousel (flèches ‹ ›, compteur, badge)
+sur les cartes et dans la modale ; l'`image_*` de chaque réseau pointe sur la **couverture**
+(vignette + repli si `slides` absent). Publication carrousel IG/LinkedIn = phase 2 (`poster/`).
+
 ---
 
 ## 8. Base de données Supabase
@@ -717,7 +752,9 @@ create table posts (
   update_of uuid,
   -- Transcription vidéo collée manuellement
   needs_transcript boolean default false,  -- vidéo sans script auto -> à compléter
-  pending_transcript text                  -- script collé sur le site, en attente de retraitement
+  pending_transcript text,                 -- script collé sur le site, en attente de retraitement
+  -- Carrousel « étude data » (pipeline nocturne)
+  slides text[]                            -- URLs des slides (couverture → graphe → à retenir → verdict)
 );
 
 alter table posts enable row level security;
@@ -733,9 +770,11 @@ alter table posts add column if not exists is_update boolean default false;
 alter table posts add column if not exists update_of uuid;
 alter table posts add column if not exists needs_transcript boolean default false;
 alter table posts add column if not exists pending_transcript text;
+alter table posts add column if not exists slides text[];   -- carrousels « étude data » (§7.8)
 ```
 > Compatibilité : si la migration n'est pas faite, `storage.py` retombe sur un insert
-> sans ces colonnes (mais le dédup perd la mémoire des chiffres entre deux nuits).
+> sans ces colonnes (le dédup perd la mémoire des chiffres entre deux nuits ; **sans
+> `slides`, les posts nocturnes s'affichent avec la seule couverture, pas le carrousel**).
 
 **Bucket Storage** : Storage → New bucket → `post-images` → Public : OUI.
 

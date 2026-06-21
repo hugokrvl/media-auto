@@ -12,7 +12,8 @@ from supabase import create_client, Client
 # Si elles n'existent pas encore côté Supabase, l'insert retombe sans ces champs.
 _DEDUP_COLS = ("topic_key", "data_sig", "is_update", "update_of")
 _VIDEO_COLS = ("needs_transcript", "pending_transcript")
-_OPTIONAL_COLS = _DEDUP_COLS + _VIDEO_COLS
+_CAROUSEL_COLS = ("slides",)   # text[] : URLs des slides du carrousel (étude data)
+_OPTIONAL_COLS = _DEDUP_COLS + _VIDEO_COLS + _CAROUSEL_COLS
 
 # .strip() défensif : un secret collé avec un retour à la ligne casse les en-têtes HTTP.
 SUPABASE_URL = os.environ["SUPABASE_URL"].strip()
@@ -48,8 +49,9 @@ def upload_image(image_bytes: bytes, filename: str) -> str:
     return public_url
 
 
-def save_post(article: dict, captions: dict, image_urls: dict) -> str:
-    """Insère un post dans la table posts. Retourne l'id."""
+def save_post(article: dict, captions: dict, image_urls: dict, slides: list = None) -> str:
+    """Insère un post dans la table posts. Retourne l'id.
+    `slides` : liste d'URLs des slides du carrousel (étude data) — optionnel."""
     sb = get_client()
     post_id = str(uuid.uuid4())
 
@@ -64,6 +66,7 @@ def save_post(article: dict, captions: dict, image_urls: dict) -> str:
         "verified": article.get("verified", False),
         "key_data": article.get("key_points", []),
         "chart_type": article.get("chart_type", "infographic"),
+        "slides": slides or None,
         "caption_twitter": captions.get("twitter", ""),
         "caption_instagram": captions.get("instagram", ""),
         "caption_linkedin": captions.get("linkedin", ""),
