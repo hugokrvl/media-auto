@@ -20,6 +20,8 @@ import os
 import time
 from groq import Groq
 
+import article_fetch
+
 client = Groq(api_key=os.environ["GROQ_API_KEY"])
 
 # Modèles (surchageables par env)
@@ -34,6 +36,7 @@ DIGEST_MODEL = os.environ.get("GROQ_DIGEST_MODEL", "llama-3.1-8b-instant")
 MAX_ANALYZE = int(os.environ.get("GROQ_MAX_ANALYZE", "60"))   # triés en passe 1
 MAX_ENRICH = int(os.environ.get("GROQ_MAX_ENRICH", "10"))     # enrichis en passe 2 (70b, 12k TPM)
 MAX_DIGEST = int(os.environ.get("GROQ_MAX_DIGEST", "5"))      # vidéos digérées/nuit
+MAX_FULLTEXT = int(os.environ.get("FULLTEXT_MAX", "10"))      # articles lus EN ENTIER puis digérés/nuit
 DIGEST_CHARS = int(os.environ.get("GROQ_DIGEST_CHARS", "14000"))  # taille d'un morceau
 # Pacing entre appels : 8b tolère 2s, 70b nécessite ≥7s (12 000 TPM / ~1 300 tok/appel)
 PACE_SECONDS        = float(os.environ.get("GROQ_PACE_SECONDS", "2.2"))   # triage 8b
@@ -82,16 +85,16 @@ Titre: __TITLE__
 Source: __SOURCE__
 Résumé: __SUMMARY__"""
 
-DIGEST_SYSTEM = """Tu condenses la transcription d'une vidéo en un résumé DENSE EN DONNÉES,
-en français. Tu extrais en priorité : chiffres, pourcentages, montants, dates, comparaisons,
-tendances, classements et faits vérifiables. Tu ignores le bavardage. Tu n'inventes RIEN.
-Réponds UNIQUEMENT en JSON valide."""
+DIGEST_SYSTEM = """Tu condenses un texte (article complet OU transcription vidéo) en un résumé
+DENSE EN DONNÉES, en français. Tu extrais en priorité : chiffres, pourcentages, montants, dates,
+comparaisons, tendances, classements et faits vérifiables. Tu ignores le bavardage. Tu n'inventes
+RIEN. Réponds UNIQUEMENT en JSON valide."""
 
-DIGEST_PROMPT = """Transcription (ou extrait) de la vidéo « __TITLE__ ».
+DIGEST_PROMPT = """Texte (ou extrait) de « __TITLE__ ».
 Extrais TOUTES les données chiffrées et faits clés, de façon compacte et factuelle.
 JSON EXACTEMENT : {"digest": "<résumé dense en données, en français, max 1200 caractères>"}
 
-Transcription :
+Texte :
 __BODY__"""
 
 ENRICH_SYSTEM = """Tu es un journaliste de data-visualisation. À partir d'un article
@@ -171,27 +174,31 @@ def _triage_one(article: dict) -> dict:
                  _fill(TRIAGE_PROMPT, article, 350), max_tokens=180)
 
 
-def _digest_transcript(article: dict) -> str:
-    """Map-reduce : compresse la transcription complète d'une vidéo en un résumé
-    dense en données, via le modèle pas cher (gros quota). '' si rien/échec."""
-    full = article.get("transcript") or ""
-    if not full.strip():
+def _digest_text(title: str, text: str) -> str:
+    """Map-reduce : compresse un texte long (article complet OU transcription) en un
+    résumé dense en données, via le modèle pas cher (gros quota). '' si rien/échec.
+    Le 70b ne verra QUE ce condensé → tous les chiffres captés, tokens 70b préservés."""
+    text = (text or "").strip()
+    if not text:
         return ""
-    chunks = [full[i:i + DIGEST_CHARS] for i in range(0, len(full), DIGEST_CHARS)][:4]
+    chunks = [text[i:i + DIGEST_CHARS] for i in range(0, len(text), DIGEST_CHARS)][:4]
     parts = []
     for ch in chunks:
         try:
-            prompt = (DIGEST_PROMPT
-                      .replace("__TITLE__", article.get("title", ""))
-                      .replace("__BODY__", ch))
+            prompt = DIGEST_PROMPT.replace("__TITLE__", title).replace("__BODY__", ch)
             d = _chat(DIGEST_MODEL, DIGEST_SYSTEM, prompt, max_tokens=500)
             txt = (d.get("digest") or "").strip()
             if txt:
                 parts.append(txt)
         except Exception as e:
-            print(f"[ANALYZER] Digest KO ({type(e).__name__}) sur '{article.get('title','')[:40]}'")
+            print(f"[ANALYZER] Digest KO ({type(e).__name__}) sur '{title[:40]}'")
         time.sleep(PACE_SECONDS)
     return " ".join(parts)[:2500]
+
+
+def _digest_transcript(article: dict) -> str:
+    """Compat : digère la transcription d'une vidéo (utilisé par reprocess.py)."""
+    return _digest_text(article.get("title", ""), article.get("transcript") or "")
 
 
 def _enrich_one(article: dict, summary_override: str = None) -> dict:
@@ -256,16 +263,28 @@ def analyze_articles(articles: list[dict], max_to_analyze: int = None) -> list[d
 
     # PASSE 2 — enrichissement qualité (modèle 70b) sur les retenus
     enriched = []
-    digested = 0
+    vid_digested = art_digested = 0
     for article in selected:
-        # Vidéo retenue avec transcription complète -> on la "digère" d'abord
-        # (modèle pas cher) pour donner au 70b TOUTES les données sans exploser ses tokens
+        # On donne au 70b le MAXIMUM de données SANS exploser son quota : on ne lui passe
+        # jamais le texte brut, mais un DIGEST produit par le modèle pas cher (8b, gros quota).
+        #   - vidéo  -> digest de la transcription complète
+        #   - sinon  -> on tente le TEXTE COMPLET de l'article (article_fetch) puis digest
+        # Repli auto : pas de texte (paywall / Google News / blocage) -> digest=None ->
+        # _enrich_one retombe sur le résumé RSS court. ÉQUITÉ : on est APRÈS le triage,
+        # donc lire un article en entier ne change PAS son score (aucun avantage de sélection).
         digest = None
-        if article.get("transcript") and digested < MAX_DIGEST:
+        if article.get("transcript") and vid_digested < MAX_DIGEST:
             digest = _digest_transcript(article)
             if digest:
-                digested += 1
+                vid_digested += 1
                 print(f"[ANALYZER] Vidéo digérée ({len(digest)} car.) : {article.get('title','')[:45]}")
+        elif not article.get("transcript") and art_digested < MAX_FULLTEXT:
+            full = article_fetch.fetch_fulltext(article.get("url", ""))
+            if full:
+                digest = _digest_text(article.get("title", ""), full)
+                if digest:
+                    art_digested += 1
+                    print(f"[ANALYZER] Article complet lu+digéré ({len(full)}→{len(digest)} car.) : {article.get('title','')[:45]}")
         try:
             e = _enrich_one(article, summary_override=digest)
             article.update({
@@ -287,8 +306,9 @@ def analyze_articles(articles: list[dict], max_to_analyze: int = None) -> list[d
             enriched.append(article)
         time.sleep(PACE_SECONDS_ENRICH)  # 70b : 7s min pour rester sous 12k TPM
 
-    print(f"[ANALYZER] {len(enriched)} articles prêts (triage {TRIAGE_MODEL} → "
-          f"génération {GENERATION_MODEL})")
+    print(f"[ANALYZER] {len(enriched)} articles prêts "
+          f"({art_digested} lus en entier, {vid_digested} vidéos digérées ; "
+          f"triage {TRIAGE_MODEL} → génération {GENERATION_MODEL})")
     return enriched
 
 
