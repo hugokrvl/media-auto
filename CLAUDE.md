@@ -371,17 +371,24 @@ clés, **100 % templatés, ZÉRO token IA**). L'étude entre dans le même moteu
 dédup → carrousel (§7.8) → captions → Supabase. Marquées `source="Banque mondiale"`,
 `score=9`, `verified=true`, `is_opendata=true`.
 
-- **v1 : Banque mondiale** (`api.worldbank.org`, JSON, **sans clé**) — registre `STUDIES` de
-  ~10 études : classements de pays (`compare` → barres : PIB, PIB/hab., croissance, inflation,
-  chômage, population, internet, R&D) et séries France (`series` → courbe : PIB 15 ans,
-  inflation 12 ans). Valeurs en `Md$` / `%` / `hab.` selon l'indicateur.
+- **Banque mondiale** (`api.worldbank.org`, JSON, **sans clé**) — registre `STUDIES` :
+  classements de pays (`compare` → barres : PIB, PIB/hab., croissance, inflation, chômage,
+  population, internet, R&D) et séries France (`series` → courbe : PIB 15 ans, inflation 12 ans).
+  Valeurs en `Md$` / `%` / `hab.` selon l'indicateur.
+- **FRED · Fed de St. Louis** (`api.stlouisfed.org`, JSON) — séries éco US en fréquence
+  annuelle (`series` → courbe : taux directeur Fed, chômage US, taux à 10 ans). **Nécessite
+  `FRED_API_KEY`** (gratuit sur fred.stlouisfed.org) ; **sans clé, ces études sont ignorées**
+  (la Banque mondiale tourne seule). Démontre le pattern multi-fournisseurs (champ `provider`).
+- **Variation intelligente** (`_build_series`) : un TAUX (%) → variation en **points** (un taux
+  0,1 → 5,3 affiche « +5,2 pt », pas « +5200 % ») ; un NIVEAU (PIB…) → variation en **%**.
 - **Rotation quotidienne** (`fetch_studies`) : un sous-ensemble différent chaque jour ;
   plafond `OPENDATA_MAX` (défaut 2/nuit). Le **dédup** écarte une donnée inchangée → pas de
   répétition (les stats officielles bougent ~1×/an).
 - **Placées EN TÊTE** du flux nocturne (données les plus fiables), puis les articles.
 - **Robuste** : toute erreur réseau/API → l'étude est ignorée, le flux articles continue seul.
-- **Extensible** : ajouter Eurostat / FRED / INSEE = écrire un fetcher + l'ajouter au registre.
-- Réglages env : `OPENDATA_ENABLED` (1/0), `OPENDATA_MAX` (2), `OPENDATA_TIMEOUT`.
+- **Extensible** : ajouter Eurostat / INSEE = écrire un fetcher + l'ajouter au registre
+  (FRED déjà branché comme 2ᵉ fournisseur via le champ `provider`).
+- Réglages env : `OPENDATA_ENABLED` (1/0), `OPENDATA_MAX` (2), `OPENDATA_TIMEOUT`, `FRED_API_KEY`.
 - Test offline (builders + rendu, sans réseau) : `python opendata.py` (→ `test_od_*.png`).
 
 ---

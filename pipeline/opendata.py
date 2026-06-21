@@ -24,6 +24,7 @@ import brand as B
 
 ENABLED = os.environ.get("OPENDATA_ENABLED", "1") != "0"
 TIMEOUT = int(os.environ.get("OPENDATA_TIMEOUT", "15"))
+FRED_KEY = os.environ.get("FRED_API_KEY", "").strip()   # gratuit ; sans clé, FRED reste dormant
 _UA = "Mozilla/5.0 (compatible; HKMediaBot/1.0)"
 
 # Pays suivis (grandes économies) + libellés FR. iso3 World Bank.
@@ -74,6 +75,21 @@ STUDIES = [
      "years": 12, "scale": 1, "unit": "%", "category": "finance",
      "title": "L'inflation en France sur 12 ans",
      "subtitle": "Hausse annuelle des prix · Banque mondiale"},
+
+    # ── FRED (Fed de St. Louis) — séries éco US. Nécessite FRED_API_KEY (gratuit) ; ──
+    # ── sans clé, ces études sont simplement ignorées (la Banque mondiale continue). ──
+    {"id": "fed", "provider": "fred", "kind": "series", "series_id": "FEDFUNDS", "years": 12,
+     "scale": 1, "unit": "%", "country_fr": "Le taux directeur de la Fed", "category": "finance",
+     "title": "Le taux directeur de la Fed sur 12 ans",
+     "subtitle": "Taux effectif, moyenne annuelle · FRED"},
+    {"id": "us_unemp", "provider": "fred", "kind": "series", "series_id": "UNRATE", "years": 12,
+     "scale": 1, "unit": "%", "country_fr": "Le chômage américain", "category": "finance",
+     "title": "Le chômage aux États-Unis sur 12 ans",
+     "subtitle": "Taux de chômage, moyenne annuelle · FRED"},
+    {"id": "us_10y", "provider": "fred", "kind": "series", "series_id": "DGS10", "years": 12,
+     "scale": 1, "unit": "%", "country_fr": "Le taux à 10 ans américain", "category": "finance",
+     "title": "Le taux à 10 ans américain sur 12 ans",
+     "subtitle": "Rendement du Trésor 10 ans, moyenne annuelle · FRED"},
 ]
 
 
@@ -102,12 +118,17 @@ def _wb_series(indicator: str, country: str, years: int) -> list:
 # ── Construction de l'étude (PUR — testable hors-ligne) ──────────────────────
 def _study_dict(defn, chart_type, chart_data, key_points, insight, year):
     sub = defn["subtitle"].replace("{year}", str(year) if year else "").strip(" ·")
+    if defn.get("provider") == "fred":
+        source = "FRED · Fed de St. Louis"
+        url = f"https://fred.stlouisfed.org/series/{defn.get('series_id', '')}"
+    else:
+        source = "Banque mondiale"
+        url = f"https://data.worldbank.org/indicator/{defn.get('indicator', '')}"
     return {
         "title": defn["title"], "title_fr": defn["title"], "subtitle_fr": sub,
         "chart_type": chart_type, "chart_data": chart_data, "key_points": key_points,
-        "insight": insight, "source": "Banque mondiale", "category": defn.get("category", "finance"),
-        "url": f"https://data.worldbank.org/indicator/{defn['indicator']}",
-        "score": 9, "verified": True, "is_opendata": True,
+        "insight": insight, "source": source, "category": defn.get("category", "finance"),
+        "url": url, "score": 9, "verified": True, "is_opendata": True,
     }
 
 
@@ -150,18 +171,51 @@ def _build_series(defn, pts):
     pts.sort(key=lambda p: p["year"])
     chart = [{"label": str(p["year"]), "value": round(p["value"] / scale, 2)} for p in pts]
     first, last = chart[0]["value"], chart[-1]["value"]
-    pct = (last - first) / abs(first) * 100 if first else 0
     pays = defn.get("country_fr") or _FR.get(defn.get("country", ""), "La France")
-    sign = "+" if pct >= 0 else ""
+    # Un TAUX (%) qui passe de 0,1 à 5,3 n'a pas fait « +5200 % » → variation en POINTS.
+    # Un NIVEAU (PIB en Md$…) → variation en pourcentage.
+    if unit == "%":
+        d = last - first
+        change = (f"{'+' if d >= 0 else '−'}{abs(d):.1f} pt").replace(".", ",")
+    else:
+        pct = (last - first) / abs(first) * 100 if first else 0
+        change = f"{'+' if pct >= 0 else '−'}{abs(pct):.0f} %"
     insight = (f"{pays} : de {B.fr(first)}{_u(unit)} à {B.fr(last)}{_u(unit)} "
-               f"en {len(chart)} ans ({sign}{pct:.0f} %).")
+               f"en {len(chart)} ans ({change}).")
     key_points = [f"Début ({chart[0]['label']}) : {B.fr(first)}{_u(unit)}",
                   f"Fin ({chart[-1]['label']}) : {B.fr(last)}{_u(unit)}",
-                  f"Évolution : {sign}{pct:.0f} %"]
+                  f"Évolution : {change}"]
     return _study_dict(defn, "courbe", chart, key_points, insight, chart[-1]["label"])
 
 
+def _fred_series(series_id: str, years: int) -> list:
+    """Série FRED en fréquence ANNUELLE (moyenne) → ~12 points propres. [] sans clé/échec."""
+    start = f"{datetime.date.today().year - years}-01-01"
+    q = urlencode({"series_id": series_id, "api_key": FRED_KEY, "file_type": "json",
+                   "observation_start": start, "frequency": "a",
+                   "aggregation_method": "avg", "sort_order": "asc"})
+    req = Request(f"https://api.stlouisfed.org/fred/series/observations?{q}",
+                  headers={"User-Agent": _UA})
+    with urlopen(req, timeout=TIMEOUT) as r:
+        data = json.load(r)
+    out = []
+    for o in data.get("observations", []):
+        v = o.get("value")
+        if v in (None, ".", ""):
+            continue
+        try:
+            out.append({"year": int(str(o["date"])[:4]), "value": float(v)})
+        except Exception:
+            pass
+    return out
+
+
 def build_study(defn):
+    provider = defn.get("provider", "wb")
+    if provider == "fred":
+        if not FRED_KEY:                       # pas de clé → étude dormante (la Banque mondiale tourne)
+            return None
+        return _build_series(defn, _fred_series(defn["series_id"], defn.get("years", 12)))
     if defn["kind"] == "compare":
         return _build_compare(defn, _wb_compare(defn["indicator"], defn["countries"]))
     return _build_series(defn, _wb_series(defn["indicator"], defn["country"], defn.get("years", 12)))
@@ -198,13 +252,20 @@ if __name__ == "__main__":
         {"iso3": "ITA", "value": 2.1e12, "year": "2024"}])
     ser = _build_series(STUDIES[8], [{"year": y, "value": 2.0e12 + (y - 2010) * 9e10}
                                      for y in range(2010, 2025)])
-    for s in (comp, ser):
-        print(f"\n{s['title']} | {s['subtitle_fr']}")
+    # Série de TAUX (FRED) → la variation doit être en POINTS, pas en % (anti +5200 %).
+    rate = _build_series(
+        {"kind": "series", "scale": 1, "unit": "%", "provider": "fred",
+         "country_fr": "Le taux directeur de la Fed", "series_id": "FEDFUNDS",
+         "title": "Le taux directeur de la Fed sur 12 ans",
+         "subtitle": "Taux effectif, moyenne annuelle · FRED"},
+        [{"year": y, "value": v} for y, v in zip(range(2013, 2025),
+         [0.1, 0.1, 0.1, 0.4, 1.0, 1.8, 2.2, 0.4, 0.1, 1.7, 5.0, 5.3])])
+    for s in (comp, ser, rate):
+        print(f"\n{s['title']} | {s['subtitle_fr']} | {s['source']}")
         print(f"  insight : {s['insight']}")
         print(f"  points  : {s['key_points']}")
-        print(f"  data    : {s['chart_data']}")
     import carousel
-    for s, name in ((comp, "compare"), (ser, "series")):
+    for s, name in ((comp, "compare"), (ser, "series"), (rate, "rate")):
         for i, png in enumerate(carousel.generate_carousel(s), 1):
             open(f"test_od_{name}_{i}.png", "wb").write(png)
         print(f"{name} : carrousel rendu")
