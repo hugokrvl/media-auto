@@ -379,6 +379,11 @@ dédup → carrousel (§7.8) → captions → Supabase. Marquées `source="Banqu
   annuelle (`series` → courbe : taux directeur Fed, chômage US, taux à 10 ans). **Nécessite
   `FRED_API_KEY`** (gratuit sur fred.stlouisfed.org) ; **sans clé, ces études sont ignorées**
   (la Banque mondiale tourne seule). Démontre le pattern multi-fournisseurs (champ `provider`).
+- **Eurostat** (`ec.europa.eu/eurostat`, **sans clé**, format **JSON-stat 2.0**) — classements
+  de pays UE plus frais que la Banque mondiale (`compare` → barres : PIB, inflation IPCH,
+  chômage). Parseur JSON-stat maison (`_js_latest_by_geo` : indice plat row-major + repli sur
+  la dernière période dispo PAR pays ; `filters` fixe les dimensions unit/na_item/…). Les codes
+  de dataset/dimension sont confirmés au 1er run réel — en cas de souci, l'étude est ignorée.
 - **Variation intelligente** (`_build_series`) : un TAUX (%) → variation en **points** (un taux
   0,1 → 5,3 affiche « +5,2 pt », pas « +5200 % ») ; un NIVEAU (PIB…) → variation en **%**.
 - **Rotation quotidienne** (`fetch_studies`) : un sous-ensemble différent chaque jour ;
@@ -386,8 +391,8 @@ dédup → carrousel (§7.8) → captions → Supabase. Marquées `source="Banqu
   répétition (les stats officielles bougent ~1×/an).
 - **Placées EN TÊTE** du flux nocturne (données les plus fiables), puis les articles.
 - **Robuste** : toute erreur réseau/API → l'étude est ignorée, le flux articles continue seul.
-- **Extensible** : ajouter Eurostat / INSEE = écrire un fetcher + l'ajouter au registre
-  (FRED déjà branché comme 2ᵉ fournisseur via le champ `provider`).
+- **Extensible** : 3 fournisseurs branchés (Banque mondiale, FRED, Eurostat) via le champ
+  `provider`. Ajouter INSEE (auth OAuth) = écrire un fetcher + l'ajouter au registre.
 - Réglages env : `OPENDATA_ENABLED` (1/0), `OPENDATA_MAX` (2), `OPENDATA_TIMEOUT`, `FRED_API_KEY`.
 - Test offline (builders + rendu, sans réseau) : `python opendata.py` (→ `test_od_*.png`).
 

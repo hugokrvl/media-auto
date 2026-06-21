@@ -33,6 +33,12 @@ _FR = {"USA": "États-Unis", "CHN": "Chine", "DEU": "Allemagne", "JPN": "Japon",
        "IND": "Inde", "BRA": "Brésil", "CAN": "Canada", "KOR": "Corée du Sud"}
 _BIG = list(_FR.keys())
 
+# Pays UE (codes Eurostat = ISO2). Pas d'agrégat UE27 dans les classements (il écraserait tout).
+_EU_FR = {"FR": "France", "DE": "Allemagne", "IT": "Italie", "ES": "Espagne", "NL": "Pays-Bas",
+          "BE": "Belgique", "PL": "Pologne", "SE": "Suède", "AT": "Autriche", "PT": "Portugal",
+          "IE": "Irlande", "GR": "Grèce", "FI": "Finlande", "DK": "Danemark"}
+_EU = list(_EU_FR.keys())
+
 # Registre des études (chacune = 1 visuel). compare = classement de pays ; series = courbe FR.
 STUDIES = [
     {"id": "pib", "kind": "compare", "indicator": "NY.GDP.MKTP.CD", "countries": _BIG,
@@ -90,6 +96,23 @@ STUDIES = [
      "scale": 1, "unit": "%", "country_fr": "Le taux à 10 ans américain", "category": "finance",
      "title": "Le taux à 10 ans américain sur 12 ans",
      "subtitle": "Rendement du Trésor 10 ans, moyenne annuelle · FRED"},
+
+    # ── Eurostat (UE, SANS clé) — classements de pays européens, données fraîches. ──
+    {"id": "eu_gdp", "provider": "eurostat", "kind": "compare", "dataset": "nama_10_gdp",
+     "geos": _EU, "filters": {"freq": "A", "unit": "CP_MEUR", "na_item": "B1GQ"},
+     "top": 6, "scale": 1e3, "unit": "Md€", "category": "finance",
+     "title": "Les plus grandes économies d'Europe",
+     "subtitle": "PIB en milliards d'euros · Eurostat {year}"},
+    {"id": "eu_inflation", "provider": "eurostat", "kind": "compare", "dataset": "prc_hicp_aind",
+     "geos": _EU, "filters": {"freq": "A", "unit": "RCH_A_AVG", "coicop": "CP00"},
+     "top": 6, "scale": 1, "unit": "%", "category": "finance",
+     "title": "Inflation en Europe : où les prix flambent",
+     "subtitle": "Hausse des prix (IPCH) · Eurostat {year}"},
+    {"id": "eu_unemp", "provider": "eurostat", "kind": "compare", "dataset": "une_rt_a",
+     "geos": _EU, "filters": {"freq": "A", "age": "Y15-74", "sex": "T", "unit": "PC_ACT"},
+     "top": 6, "scale": 1, "unit": "%", "category": "finance",
+     "title": "Le chômage en Europe : le classement",
+     "subtitle": "Taux de chômage · Eurostat {year}"},
 ]
 
 
@@ -118,9 +141,13 @@ def _wb_series(indicator: str, country: str, years: int) -> list:
 # ── Construction de l'étude (PUR — testable hors-ligne) ──────────────────────
 def _study_dict(defn, chart_type, chart_data, key_points, insight, year):
     sub = defn["subtitle"].replace("{year}", str(year) if year else "").strip(" ·")
-    if defn.get("provider") == "fred":
+    provider = defn.get("provider", "wb")
+    if provider == "fred":
         source = "FRED · Fed de St. Louis"
         url = f"https://fred.stlouisfed.org/series/{defn.get('series_id', '')}"
+    elif provider == "eurostat":
+        source = "Eurostat"
+        url = f"https://ec.europa.eu/eurostat/databrowser/view/{defn.get('dataset', '')}"
     else:
         source = "Banque mondiale"
         url = f"https://data.worldbank.org/indicator/{defn.get('indicator', '')}"
@@ -136,14 +163,15 @@ def _u(unit):
     return f" {unit}" if unit else ""
 
 
-def _build_compare(defn, recs):
+def _build_compare(defn, recs, labels=None, home="FRA"):
+    labels = labels or _FR
     scale, unit = defn.get("scale", 1), defn.get("unit", "")
     rows = []
     year = None
     for r in recs:
         if r.get("value") is None:
             continue
-        rows.append({"iso3": r["iso3"], "label": _FR.get(r["iso3"], r["iso3"]),
+        rows.append({"iso3": r["iso3"], "label": labels.get(r["iso3"], r["iso3"]),
                      "value": round(r["value"] / scale, 2)})
         year = r.get("year")
     if len(rows) < 3:
@@ -151,8 +179,8 @@ def _build_compare(defn, recs):
     rows.sort(key=lambda x: x["value"], reverse=True)
     top = rows[:defn.get("top", 6)]
     chart = [{"label": x["label"], "value": x["value"]} for x in top]
-    fr_rank = next((i + 1 for i, x in enumerate(rows) if x["iso3"] == "FRA"), None)
-    fr_val = next((x["value"] for x in rows if x["iso3"] == "FRA"), None)
+    fr_rank = next((i + 1 for i, x in enumerate(rows) if x["iso3"] == home), None)
+    fr_val = next((x["value"] for x in rows if x["iso3"] == home), None)
     leader = top[0]
     insight = f"{leader['label']} en tête avec {B.fr(leader['value'])}{_u(unit)}."
     if fr_rank:
@@ -210,12 +238,66 @@ def _fred_series(series_id: str, years: int) -> list:
     return out
 
 
+# ── Eurostat (JSON-stat 2.0) ─────────────────────────────────────────────────
+def _eurostat_get(dataset: str, geos: list, filters: dict) -> dict:
+    q = [("format", "JSON")]
+    for k, v in filters.items():
+        q.append((k, v))
+    for g in geos:
+        q.append(("geo", g))
+    q.append(("lastTimePeriod", "3"))          # 3 dernières périodes → repli par pays si trou
+    url = ("https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data/"
+           f"{dataset}?{urlencode(q)}")
+    req = Request(url, headers={"User-Agent": _UA})
+    with urlopen(req, timeout=TIMEOUT) as r:
+        return json.load(r)
+
+
+def _js_strides(size: list) -> list:
+    """Pas (row-major) pour convertir des indices de catégorie en indice plat JSON-stat."""
+    strides = [1] * len(size)
+    for i in range(len(size) - 2, -1, -1):
+        strides[i] = strides[i + 1] * size[i + 1]
+    return strides
+
+
+def _js_latest_by_geo(js: dict, prefer: dict) -> tuple:
+    """{code_pays: valeur} pour la dernière période dispo PAR pays. prefer fixe les autres
+    dimensions (unit, na_item…) par code ; à défaut, indice 0."""
+    ids, size, dims, values = js["id"], js["size"], js["dimension"], js["value"]
+    strides = _js_strides(size)
+    geo_pos, time_pos = ids.index("geo"), ids.index("time")
+    time_desc = sorted(dims["time"]["category"]["index"].items(),
+                       key=lambda kv: kv[1], reverse=True)          # (code, idx) décroissant
+    base = 0
+    for pos, dim in enumerate(ids):
+        if dim in ("geo", "time"):
+            continue
+        idx = dims[dim]["category"]["index"]
+        code = prefer.get(dim)
+        base += (idx.get(code, 0) if code else 0) * strides[pos]
+    out, year = {}, None
+    for gcode, gi in dims["geo"]["category"]["index"].items():
+        for tcode, ti in time_desc:
+            v = values.get(str(base + gi * strides[geo_pos] + ti * strides[time_pos]))
+            if v is not None:
+                out[gcode] = v
+                year = year or tcode
+                break
+    return out, year
+
+
 def build_study(defn):
     provider = defn.get("provider", "wb")
     if provider == "fred":
         if not FRED_KEY:                       # pas de clé → étude dormante (la Banque mondiale tourne)
             return None
         return _build_series(defn, _fred_series(defn["series_id"], defn.get("years", 12)))
+    if provider == "eurostat":
+        js = _eurostat_get(defn["dataset"], defn["geos"], defn.get("filters", {}))
+        by_geo, year = _js_latest_by_geo(js, defn.get("filters", {}))
+        recs = [{"iso3": c, "value": v, "year": year} for c, v in by_geo.items()]
+        return _build_compare(defn, recs, labels=_EU_FR, home="FR")
     if defn["kind"] == "compare":
         return _build_compare(defn, _wb_compare(defn["indicator"], defn["countries"]))
     return _build_series(defn, _wb_series(defn["indicator"], defn["country"], defn.get("years", 12)))
@@ -260,12 +342,33 @@ if __name__ == "__main__":
          "subtitle": "Taux effectif, moyenne annuelle · FRED"},
         [{"year": y, "value": v} for y, v in zip(range(2013, 2025),
          [0.1, 0.1, 0.1, 0.4, 1.0, 1.8, 2.2, 0.4, 0.1, 1.7, 5.0, 5.3])])
-    for s in (comp, ser, rate):
+    # Eurostat : test du parseur JSON-stat (indice plat row-major + repli de période/pays).
+    # IT n'a pas 2024 ici → doit retomber sur 2023 ; FR/DE en 2024. Vérifie aussi le rang FR.
+    js = {
+        "id": ["freq", "unit", "na_item", "geo", "time"], "size": [1, 1, 1, 3, 2],
+        "dimension": {
+            "freq": {"category": {"index": {"A": 0}}},
+            "unit": {"category": {"index": {"CP_MEUR": 0}}},
+            "na_item": {"category": {"index": {"B1GQ": 0}}},
+            "geo": {"category": {"index": {"DE": 0, "FR": 1, "IT": 2}}},
+            "time": {"category": {"index": {"2023": 0, "2024": 1}}},
+        },
+        "value": {"1": 4_200_000, "3": 2_900_000, "4": 2_000_000},  # DE2024, FR2024, IT2023(repli)
+    }
+    by_geo, yr = _js_latest_by_geo(js, {"freq": "A", "unit": "CP_MEUR", "na_item": "B1GQ"})
+    assert by_geo == {"DE": 4_200_000, "FR": 2_900_000, "IT": 2_000_000}, by_geo
+    assert yr == "2024", yr
+    eu_defn = next(s for s in STUDIES if s["id"] == "eu_gdp")
+    eu = _build_compare(eu_defn, [{"iso3": c, "value": v, "year": yr} for c, v in by_geo.items()],
+                        labels=_EU_FR, home="FR")
+    print(f"\n[JSON-stat OK] by_geo={by_geo} year={yr}")
+
+    for s in (comp, ser, rate, eu):
         print(f"\n{s['title']} | {s['subtitle_fr']} | {s['source']}")
         print(f"  insight : {s['insight']}")
         print(f"  points  : {s['key_points']}")
     import carousel
-    for s, name in ((comp, "compare"), (ser, "series"), (rate, "rate")):
+    for s, name in ((comp, "compare"), (ser, "series"), (rate, "rate"), (eu, "eurostat")):
         for i, png in enumerate(carousel.generate_carousel(s), 1):
             open(f"test_od_{name}_{i}.png", "wb").write(png)
         print(f"{name} : carrousel rendu")
