@@ -191,11 +191,12 @@ Analyser 60 articles/nuit avec le 70b ≈ **~96-107k tokens/jour** → dépasser
 Le 70b est réservé à l'enrichissement structuré uniquement — les captions basculent
 sur le 8b (500k/jour) pour économiser le quota. Consommation 70b estimée : ~12k/100k/jour.
 
-> ⚠️ **TODO — qualité captions** : les captions sont actuellement sur `llama-3.1-8b-instant`
-> pour économiser le quota 70b (on avait dépassé 100k/jour en testant plusieurs runs le même jour).
-> En production normale (1 run/nuit), la conso 70b serait ~12k → quota largement suffisant.
-> **Repasser `GROQ_CAPTION_MODEL` sur `llama-3.3-70b-versatile`** dans `generator.py` dès que
-> la qualité des captions 8b semble insuffisante, ou si le quota n'est jamais atteint en pratique.
+> ✅ **Captions — qualité** : le chemin NORMAL des captions passe par **Mistral/Gemini**
+> (`generate_captions` → `llm.generate_json`), PAS par Groq. Le `GROQ_CAPTION_MODEL` n'est
+> qu'un **repli** activé seulement si Mistral ET Gemini sont indisponibles ; il est désormais
+> sur **`llama-3.3-70b-versatile`** (au lieu du 8b) → copy de secours bien meilleure.
+> Quota-safe : 1 run/nuit ≈ ~48k/100k tokens 70b même en repli. Pour économiser lors de tests
+> répétés le même jour, mettre `GROQ_CAPTION_MODEL=llama-3.1-8b-instant`.
 
 **Digest vidéo (map-reduce)** — une transcription d'1h ≈ 13k tokens, trop gros pour le
 70b (100k/jour). On la « digère » d'abord avec le modèle pas cher (500k/jour) : découpe
@@ -612,10 +613,12 @@ Pipeline rapide :
    dirigeant emblématique **même non cité** (Strategy→Saylor, Tesla→Musk, Nvidia→Huang,
    OpenAI→Altman…) → vrai visage reconnaissable. Renvoie aussi `companies` (+ domaine).
 5. **Image = héros** (`build_image`), par ordre :
-   - **≥ 2 dirigeants** → **MONTAGE PRO** (`montage.py`) : portraits **détourés**
-     (`rembg`, modèle léger `u2netp` ~4 Mo) sur fond dégradé HK + glow couleur catégorie
-     + ombres portées, layout adaptatif. 100% cloud (rembg tourne dans GitHub Actions).
-     Repli auto sur montage en bandes si rembg indisponible.
+   - **≥ 2 dirigeants** → **MONTAGE PRO** (`montage.py`) : portraits **détourés** (`rembg`,
+     modèle **configurable via `REMBG_MODEL`** — défaut `isnet-general-use` ~178 Mo, bords nets
+     pour un rendu pro ; `u2netp` ~4 Mo en repli léger / local) sur fond dégradé HK + glow
+     couleur catégorie + ombres portées, layout adaptatif. 100% cloud (rembg dans GitHub
+     Actions, **modèle mis en cache** → téléchargé une seule fois). Repli auto sur montage en
+     bandes si rembg indisponible.
    - **1 dirigeant / figure de la boîte** → son **portrait** (en **rotation**, voir §7.7)
    - sinon → **photo concept** (Unsplash, sur la requête image de l'IA)
    - Filet : si le portrait n'a pas de photo Wikipédia → repli concept (jamais d'image cassée).
@@ -645,7 +648,8 @@ un label (`T1`, `5G`, `GPT-6`), un chiffre seul, ou une année (`2026`).
   Succès = **204**. C'est ça qui garantit le temps réel (le cron GitHub natif tardait/sautait).
 
 Réglages env : `BREAKING_RECENT_MIN`, `BREAKING_MAX_PER_SCAN`, `BREAKING_SCORE_MIN`,
-`BREAKING_COHERENCE_MIN` (seuil vérif vision).
+`BREAKING_COHERENCE_MIN` (seuil vérif vision), `REMBG_MODEL` (modèle de détourage des montages,
+défaut `isnet-general-use` ; surchargeable par une *Repository variable* GitHub du même nom).
 Test local (sans Supabase) : `fetch_candidates()` → `judge()` → `enrich()` → `build_image()`
 → `verify_coherence()` (charger `MISTRAL_API_KEY` depuis `.env`).
 

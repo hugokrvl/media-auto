@@ -18,9 +18,12 @@ def _groq():
         _client = Groq(api_key=os.environ["GROQ_API_KEY"])
     return _client
 
-# Captions sur le 8b (500k tokens/jour) : qualité suffisante pour le social media,
-# économise le quota 70b (100k/jour) pour l'enrichissement structuré uniquement.
-GENERATION_MODEL = os.environ.get("GROQ_CAPTION_MODEL", "llama-3.1-8b-instant")
+# Chemin NORMAL des captions = Mistral/Gemini (qualité pro), voir generate_captions().
+# Ceci n'est que le REPLI Groq, utilisé seulement si Mistral ET Gemini sont indisponibles.
+# On prend alors le 70b (meilleure copy). Quota-safe en prod : 1 run/nuit ≈ ~48k/100k tokens
+# 70b même en repli. Mettre GROQ_CAPTION_MODEL="llama-3.1-8b-instant" pour économiser si tu
+# relances le pipeline complet plusieurs fois le même jour (tests).
+GENERATION_MODEL = os.environ.get("GROQ_CAPTION_MODEL", "llama-3.3-70b-versatile")
 
 SYSTEM_PROMPT = """Tu es un community manager expert en médias économiques et tech.
 Tu rédiges des posts viraux, informatifs et engageants pour les réseaux sociaux.

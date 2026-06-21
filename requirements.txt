@@ -7,5 +7,5 @@ numpy>=2.3.0,<3.0.0      # plage imposée par rembg 2.0.76 (>=2.3) ; pip choisit
 tweepy==4.14.0
 requests==2.32.3
 youtube-transcript-api==0.6.2
-rembg==2.0.76          # détourage des portraits pour les montages pro (modèle u2netp léger)
+rembg==2.0.76          # détourage des portraits pour les montages pro (modèle configurable via REMBG_MODEL)
 onnxruntime>=1.23.2,<2.0.0   # runtime du modèle de détourage (plancher imposé par rembg 2.0.76)

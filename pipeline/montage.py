@@ -33,20 +33,26 @@ def _cover(im: Image.Image, w: int, h: int) -> Image.Image:
     return im.resize((w, h), Image.LANCZOS)
 
 
-# ── Détourage (rembg, modèle léger u2netp ~4 Mo) ───────────────────────────────
-_U2NET_URL = "https://github.com/danielgatis/rembg/releases/download/v0.0.0/u2netp.onnx"
+# ── Détourage (rembg) ──────────────────────────────────────────────────────────
+# Modèle configurable via REMBG_MODEL (défaut : isnet-general-use = bords nets, ~178 Mo) :
+#   - "isnet-general-use" : meilleure qualité générale → montages PRO (recommandé)
+#   - "u2net_human_seg"   : spécialisé silhouettes humaines (très propre sur les personnes)
+#   - "u2netp"            : léger ~4 Mo (rapide, bords plus grossiers) — pratique en local
+# En CI le modèle est mis en cache (~/.u2net) → téléchargé une seule fois, pas à chaque run.
+_REMBG_MODEL = (os.environ.get("REMBG_MODEL") or "isnet-general-use").strip()
+_MODEL_URL = f"https://github.com/danielgatis/rembg/releases/download/v0.0.0/{_REMBG_MODEL}.onnx"
 _session = None
 
 
 def _ensure_model() -> None:
     """Garantit la présence du modèle (téléchargé via urllib, robuste vs le downloader rembg)."""
-    home = os.path.expanduser("~/.u2net")
+    home = os.path.expanduser(os.environ.get("U2NET_HOME") or "~/.u2net")
     os.makedirs(home, exist_ok=True)
-    dest = os.path.join(home, "u2netp.onnx")
+    dest = os.path.join(home, f"{_REMBG_MODEL}.onnx")
     if not os.path.exists(dest) or os.path.getsize(dest) < 100_000:
         import urllib.request
-        req = urllib.request.Request(_U2NET_URL, headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req, timeout=90) as r:
+        req = urllib.request.Request(_MODEL_URL, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=300) as r:   # 300 s : modèles lourds (~178 Mo)
             open(dest, "wb").write(r.read())
 
 
@@ -57,7 +63,7 @@ def _cutout(photo_bytes: bytes) -> Image.Image | None:
         from rembg import remove, new_session
         if _session is None:
             _ensure_model()
-            _session = new_session("u2netp")
+            _session = new_session(_REMBG_MODEL)
         return Image.open(io.BytesIO(remove(photo_bytes, session=_session))).convert("RGBA")
     except Exception as e:
         print(f"[MONTAGE] détourage indisponible ({type(e).__name__}: {e})")

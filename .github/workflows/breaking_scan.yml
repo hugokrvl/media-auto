@@ -11,6 +11,12 @@ concurrency:
   group: breaking-scan
   cancel-in-progress: false
 
+# Modèle de détourage rembg pour les montages (§7.6). Surchargeable SANS toucher au code via
+# une "Repository variable" GitHub nommée REMBG_MODEL (Settings → Secrets and variables → Actions).
+# Défaut : isnet-general-use (bords nets, qualité pro). Alternative légère : u2netp.
+env:
+  REMBG_MODEL: ${{ vars.REMBG_MODEL || 'isnet-general-use' }}
+
 jobs:
   scan:
     runs-on: ubuntu-latest
@@ -28,6 +34,13 @@ jobs:
 
       - name: Install dependencies
         run: pip install -r requirements.txt
+
+      # Met en cache le modèle de détourage (~178 Mo) → téléchargé une seule fois, pas à chaque scan.
+      - name: Cache du modèle de détourage rembg
+        uses: actions/cache@v4
+        with:
+          path: ~/.u2net
+          key: rembg-model-${{ env.REMBG_MODEL }}
 
       - name: Run breaking scan
         env:
