@@ -374,6 +374,27 @@ def fetch_studies(max_n: int = 2) -> list:
     return out
 
 
+def diagnose():
+    """Vérif LIVE : tente de construire CHAQUE étude du registre et rapporte par fournisseur
+    OK / vide / erreur. Sert à confirmer les codes Eurostat + idBanks INSEE + clé FRED en réel.
+    Usage CI : python -c "import opendata; opendata.diagnose()" — ne publie RIEN."""
+    print(f"FRED_API_KEY : {'présente' if FRED_KEY else 'ABSENTE (études FRED ignorées)'}\n")
+    ok = 0
+    for d in STUDIES:
+        prov = d.get("provider", "wb")
+        try:
+            s = build_study(d)
+            if s and s.get("chart_data"):
+                print(f"[OK]   {prov:9} {d['id']:20} {len(s['chart_data'])} pts · {s['source']}"
+                      f"  « {s['insight'][:60]} »")
+                ok += 1
+            else:
+                print(f"[VIDE] {prov:9} {d['id']:20} aucune donnée (seuil/clé/code ?)")
+        except Exception as e:
+            print(f"[ERR]  {prov:9} {d['id']:20} {type(e).__name__}: {str(e)[:80]}")
+    print(f"\n→ {ok}/{len(STUDIES)} études construites en live.")
+
+
 if __name__ == "__main__":
     # Test OFFLINE : on alimente les builders PURS avec des données simulées (pas de réseau),
     # puis on rend les carrousels pour vérifier le visuel.

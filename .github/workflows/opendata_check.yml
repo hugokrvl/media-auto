@@ -1,0 +1,31 @@
+name: MediaAuto — Vérif Open Data
+
+# Outil manuel : teste EN LIVE les 4 fournisseurs open data (Banque mondiale, FRED,
+# Eurostat, INSEE) et rapporte quelles études résolvent. Ne publie RIEN.
+on:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Diagnostic des 4 fournisseurs open data
+        env:
+          FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
+        run: |
+          cd pipeline
+          python -c "import opendata; opendata.diagnose()"

@@ -88,6 +88,7 @@ media-auto/
 │   ├── markets_close.yml  # clôture des marchés (21h30 UTC, lun-ven) — voir §7.4
 │   ├── markets_extra.yml  # Top/Flop actions + sentiment (lun-ven/sam/dim) — voir §7.5
 │   ├── breaking_scan.yml  # BREAKING temps réel (déclenché par cron-job.org /30min) — voir §7.6
+│   ├── opendata_check.yml # OUTIL manuel : teste EN LIVE les 4 fournisseurs open data — §5.4
 │   └── reset_planning.yml # OUTIL manuel : vider la table posts (saisie "RESET")
 ├── pipeline/
 │   ├── main.py            # orchestrateur (boucle, dédup, max 7 posts/nuit)
@@ -400,6 +401,10 @@ dédup → carrousel (§7.8) → captions → Supabase. Marquées `source="Banqu
   champ `provider`. Ajouter une source = écrire un fetcher + l'ajouter au registre `STUDIES`.
 - Réglages env : `OPENDATA_ENABLED` (1/0), `OPENDATA_MAX` (2), `OPENDATA_TIMEOUT`, `FRED_API_KEY`.
 - Test offline (builders + rendu, sans réseau) : `python opendata.py` (→ `test_od_*.png`).
+- **Vérif LIVE des 4 fournisseurs** (`opendata.diagnose()`) : tente de construire les 16 études
+  et rapporte OK/vide/erreur par fournisseur (confirme codes Eurostat + idBanks INSEE + clé
+  FRED). Via le workflow manuel **`opendata_check.yml`** (Actions → « Vérif Open Data » → Run).
+  Ne publie rien. Indispensable car la rotation (`OPENDATA_MAX`/jour) ne teste que 2 études/run.
 
 ---
 
