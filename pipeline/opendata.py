@@ -121,7 +121,7 @@ STUDIES = [
      "years": 12, "scale": 1, "unit": "%", "country_fr": "L'inflation en France", "category": "finance",
      "title": "L'inflation en France sur 12 ans",
      "subtitle": "Glissement annuel des prix · INSEE"},
-    {"id": "fr_chomage_insee", "provider": "insee", "kind": "series", "idbank": "001688370",
+    {"id": "fr_chomage_insee", "provider": "insee", "kind": "series", "idbank": "001688527",
      "years": 12, "scale": 1, "unit": "%", "country_fr": "Le chômage en France", "category": "finance",
      "title": "Le chômage en France sur 12 ans",
      "subtitle": "Taux de chômage (BIT), moyenne annuelle · INSEE"},
@@ -222,6 +222,11 @@ def _build_series(defn, pts):
         return None
     pts.sort(key=lambda p: p["year"])
     chart = [{"label": str(p["year"]), "value": round(p["value"] / scale, 2)} for p in pts]
+    # Garde-fou : un TAUX (%) dont les valeurs dépassent 100 = mauvaise série/échelle → ignorée
+    # (évite de publier une absurdité, ex. un idBank de comptage pris pour un taux).
+    if unit == "%" and any(abs(c["value"]) > 100 for c in chart):
+        print(f"[OPENDATA] « {defn.get('id', '?')} » : valeurs % invraisemblables (>100) → ignorée")
+        return None
     first, last = chart[0]["value"], chart[-1]["value"]
     pays = defn.get("country_fr") or _FR.get(defn.get("country", ""), "La France")
     # Un TAUX (%) qui passe de 0,1 à 5,3 n'a pas fait « +5200 % » → variation en POINTS.
