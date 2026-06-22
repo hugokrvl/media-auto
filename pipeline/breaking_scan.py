@@ -37,6 +37,7 @@ RECENT_MIN     = int(os.environ.get("BREAKING_RECENT_MIN", "45"))
 MAX_PER_SCAN   = int(os.environ.get("BREAKING_MAX_PER_SCAN", "2"))
 SCORE_MIN      = int(os.environ.get("BREAKING_SCORE_MIN", "7"))
 COHERENCE_MIN  = int(os.environ.get("BREAKING_COHERENCE_MIN", "6"))
+MAX_ATTEMPTS   = int(os.environ.get("BREAKING_MAX_ATTEMPTS", "3"))   # essais image avant abandon
 VERTICALS      = {"ia", "crypto", "quantique", "tech", "finance"}
 
 
@@ -172,15 +173,13 @@ def enrich(a: dict) -> dict:
 
 # ── 5. Image (montage si 2+ portraits) + rendu ─────────────────────────────────
 
-def build_image(a: dict) -> tuple[bytes | None, str, str]:
-    """Retourne (png_bytes, chart_type, description_image). Montage si ≥2 portraits,
-    sinon portrait unique, sinon photo concept. description_image sert à la vérification."""
+def image_candidates(a: dict):
+    """Génère (PAR ORDRE de préférence, LAZY) des visuels candidats (png, type, desc).
+    On ne calcule le suivant que si le précédent a raté la barrière QA → auto-correction."""
     people = a.get("people", [])
     seed = abs(hash(a.get("url") or a.get("title", "")))
 
-    # MONTAGE : on n'assemble QUE des portraits CANONIQUES (infobox Wikipédia) → jamais
-    # une photo de groupe / meme / cliché bizarre. La variété (rotation) est réservée au
-    # portrait unique, où le risque est moindre.
+    # Portraits CANONIQUES (infobox Wikipédia) → fiables, pour le montage.
     canon = []
     for p in people:
         url = image_fetch.portrait_canonical(p["name"])
@@ -188,41 +187,42 @@ def build_image(a: dict) -> tuple[bytes | None, str, str]:
         if data:
             canon.append({"name": p["name"], "label": p.get("org", ""), "photo_bytes": data})
 
+    # 1) MONTAGE (≥2 portraits canoniques)
     if len(canon) >= 2:
         names = ", ".join(p["name"] for p in canon[:4])
-        return (montage_renderer.make_montage_image(a, canon, badge="BREAKING"),
-                "montage", f"un montage des portraits officiels de {names}")
+        yield (montage_renderer.make_montage_image(a, canon, badge="BREAKING"),
+               "montage", f"un montage des portraits officiels de {names}")
 
-    # 1 dirigeant → portrait unique, en ROTATION (variété). Repli sur le canonique.
+    # 2) PORTRAIT UNIQUE (rotation pour la variété, repli sur le canonique)
     if people:
         p0 = people[0]
         url = image_fetch.portrait_for(p0["name"], seed=seed)
         data = image_fetch.download_image(url) if url else None
         if not data and canon:
-            data = canon[0]["photo_bytes"]
-            p0 = {"name": canon[0]["name"], "org": canon[0]["label"]}
+            data, p0 = canon[0]["photo_bytes"], {"name": canon[0]["name"], "org": canon[0]["label"]}
         if data:
             label = p0.get("org", "")
             desc = f"un portrait de {p0['name']}" + (f" ({label})" if label else "")
-            return (breaking_renderer.make_breaking_image(a, data, badge="BREAKING"),
-                    "breaking", desc)
+            yield (breaking_renderer.make_breaking_image(a, data, badge="BREAKING"), "breaking", desc)
 
-    # Pas de dirigeant identifié : on privilégie la PHOTO CONCEPT de la requête IA
-    # (propre et sûre) AVANT la recherche Wikipédia par mots du titre — qui peut matcher
-    # un mot AMBIGU ("Codex" → manuscrit médiéval, "Vision" → œil, "Visa" → document…).
-    url, desc = None, ""
+    # 3) PHOTO CONCEPT (requête IA) — propre et sûre, AVANT la cascade par mots du titre
+    seen = None
     if a.get("image_query"):
         url = (image_fetch._fetch_unsplash(a["image_query"])
                or image_fetch._fetch_pexels(a["image_query"]))
-        if url:
-            desc = f"une photo d'illustration sur le thème « {a['image_query']} »"
-    if not url:
-        url = image_fetch.fetch_photo_url(a)   # repli : Wikipédia entités + Unsplash titre
-        desc = "une image d'illustration (origine variable)"
-    data = image_fetch.download_image(url) if url else None
-    if data:
-        return breaking_renderer.make_breaking_image(a, data, badge="BREAKING"), "breaking", desc
-    return None, "", ""
+        data = image_fetch.download_image(url) if url else None
+        if data:
+            seen = url
+            yield (breaking_renderer.make_breaking_image(a, data, badge="BREAKING"),
+                   "breaking", f"une photo d'illustration sur le thème « {a['image_query']} »")
+
+    # 4) REPLI : cascade Wikipédia (entités) → Unsplash (titre)
+    url = image_fetch.fetch_photo_url(a)
+    if url and url != seen:
+        data = image_fetch.download_image(url)
+        if data:
+            yield (breaking_renderer.make_breaking_image(a, data, badge="BREAKING"),
+                   "breaking", "une image d'illustration (origine variable)")
 
 
 # ── Vérification de cohérence (vision) ─────────────────────────────────────────
@@ -241,6 +241,8 @@ def verify_coherence(img_bytes: bytes, a: dict, image_desc: str) -> tuple[bool, 
         "- l'image CONTREDIT le sens (ex : flèche verte / hausse pour une chute ou un péril) ;\n"
         "- l'image n'est PAS professionnelle : torse nu, meme, photo de GROUPE floue, "
         "déguisement/cosplay, capture d'écran, image cassée ou trop sombre/illisible ;\n"
+        "- le TEXTE incrusté est illisible, coupé, déborde, se chevauche, ou contient des "
+        "carrés vides (glyphes manquants) / un layout cassé ;\n"
         "- cliché 100 % générique sans lien précis avec ce sujet.\n"
         "coherent=true (note haute) SEULEMENT si l'image est PRO et colle au sujet ET au ton : "
         "le portrait de LA bonne personne, ou une photo concept précise et cohérente avec l'angle.\n"
@@ -252,7 +254,7 @@ def verify_coherence(img_bytes: bytes, a: dict, image_desc: str) -> tuple[bool, 
     return bool(res.get("coherent", True)), int(res.get("score", 10)), str(res.get("raison", ""))
 
 
-def _save(a: dict, img: bytes, chart_type: str) -> None:
+def _save(a: dict, img: bytes, chart_type: str, attempts: list = None) -> None:
     import storage
     from generator import generate_captions
     captions = generate_captions(a)
@@ -260,7 +262,7 @@ def _save(a: dict, img: bytes, chart_type: str) -> None:
     slug = chart_type
     image_urls = {net: storage.upload_image(img, f"{slug}_{post_id}_{net}.png")
                   for net in ("instagram", "twitter", "linkedin")}
-    storage.save_post({**a, "chart_type": chart_type}, captions, image_urls)
+    storage.save_post({**a, "chart_type": chart_type}, captions, image_urls, attempts=attempts)
 
 
 # ── Orchestrateur ──────────────────────────────────────────────────────────────
@@ -287,18 +289,32 @@ def main():
     for a in kept:
         try:
             enrich(a)
-            img, chart_type, image_desc = build_image(a)
-            if not img:
-                print(f"[SCAN] ⊘ pas d'image pour : {a['title'][:50]}")
+            # BARRIÈRE QA + AUTO-CORRECTION : on essaie les visuels candidats l'un après
+            # l'autre ; chacun doit passer la vérif vision. Les ratés sont GARDÉS (trace).
+            attempts, chosen = [], None
+            for img, ctype, desc in image_candidates(a):
+                coherent, score, reason = verify_coherence(img, a, desc)
+                if coherent and score >= COHERENCE_MIN:
+                    chosen = (img, ctype, desc, score)
+                    break
+                try:
+                    import storage
+                    rej = storage.upload_image(img, f"rejet_{uuid.uuid4().hex[:8]}.png")
+                except Exception:
+                    rej = ""
+                attempts.append({"image": rej, "type": ctype, "score": score,
+                                 "raison": reason or "image jugée non conforme"})
+                print(f"[SCAN] ↻ essai raté ({ctype}, {score}/10 : {reason}) → on refait")
+                if len(attempts) >= MAX_ATTEMPTS:
+                    break
+            if not chosen:
+                print(f"[SCAN] ⊘ aucun visuel valide ({len(attempts)} essai(s)) : {a['title'][:40]}")
                 continue
-            # VÉRIFICATION : l'image colle-t-elle au sujet ? (vision Mistral)
-            coherent, score, reason = verify_coherence(img, a, image_desc)
-            if not coherent or score < COHERENCE_MIN:
-                print(f"[SCAN] ⊘ INCOHÉRENT ({score}/10 : {reason}) — ignoré : {a['title'][:42]}")
-                continue
-            _save(a, img, chart_type)
+            img, ctype, _, score = chosen
+            _save(a, img, ctype, attempts=attempts or None)
             posted += 1
-            print(f"[SCAN] ✓ {chart_type.upper()} (cohérence {score}/10) : {a['title_fr'][:50]}")
+            tag = f" après {len(attempts)} essai(s) raté(s)" if attempts else ""
+            print(f"[SCAN] ✓ {ctype.upper()} (QA {score}/10{tag}) : {a['title_fr'][:46]}")
         except Exception as e:
             print(f"[SCAN] ✗ {type(e).__name__} sur '{a['title'][:40]}': {e}")
 

@@ -125,6 +125,37 @@ function carouselNav(postId, dir) {
   box.querySelector(".carousel-counter").textContent = `${idx + 1}/${slides.length}`;
 }
 
+// Bouton « Essais » (problèmes d'avant) : GRIS si le post a réussi du 1er coup,
+// VERT s'il a fallu des essais ratés (auto-correction). Au clic → modale des rejets.
+function attemptsBtn(post) {
+  const att = Array.isArray(post.attempts) ? post.attempts.filter(Boolean) : [];
+  if (att.length) {
+    return `<button class="btn-attempts has" title="${att.length} essai(s) corrigé(s) automatiquement — voir les versions rejetées" onclick="showAttempts('${post.id}')">⚑ ${att.length}</button>`;
+  }
+  return `<button class="btn-attempts" title="Réussi du premier coup (aucun essai raté)" disabled>⚑</button>`;
+}
+
+function showAttempts(postId) {
+  const post = allPosts.find(p => p.id === postId);
+  const att = post && Array.isArray(post.attempts) ? post.attempts.filter(Boolean) : [];
+  if (!att.length) return;
+  const items = att.map((a, i) => `
+    <div class="attempt">
+      <img src="${a.image || 'https://placehold.co/300x300/141414/ef4444?text=image'}" alt="" />
+      <div class="attempt-info">
+        <div class="attempt-head"><span class="attempt-n">Essai ${i + 1}</span>
+          <span class="attempt-score">IA ${a.score ?? '—'}/10</span></div>
+        <p class="attempt-reason">⚠ ${esc(a.raison || 'non conforme')}</p>
+        ${a.type ? `<span class="attempt-type">${esc(a.type)}</span>` : ""}
+      </div>
+    </div>`).join("");
+  document.getElementById("modal-content").innerHTML = `
+    <h3 style="font-size:15px;font-weight:700;margin-bottom:4px">⚑ Problèmes d'avant</h3>
+    <p style="font-size:12px;color:var(--text-dim);margin-bottom:14px">Versions rejetées par la barrière IA, refaites automatiquement — « ${esc((post.article_title || '').slice(0, 60))} »</p>
+    <div class="attempts-list">${items}</div>`;
+  document.getElementById("modal").style.display = "flex";
+}
+
 function makeCard(post) {
   const card = document.createElement("div");
   card.className = `post-card ${post.status}`;
@@ -161,12 +192,14 @@ function makeCard(post) {
         <div class="card-actions">
           <button class="btn-approve" onclick="approvePost('${post.id}', this)">✓ Approuver</button>
           <button class="btn-preview" onclick="openModal('${post.id}')">👁 Voir</button>
+          ${attemptsBtn(post)}
           <button class="btn-delete" title="Supprimer définitivement ce post" onclick="deletePost('${post.id}', this)">🗑 Supprimer</button>
         </div>
       ` : `
         <div class="card-actions">
           <button class="btn-preview" style="flex:1" onclick="openModal('${post.id}')">👁 Voir le post</button>
           ${post.status === "approved" ? `<button class="btn-approve" onclick="markPosted('${post.id}', this)">📤 Marquer publié</button>` : ""}
+          ${attemptsBtn(post)}
           <button class="btn-delete" title="Supprimer définitivement ce post" onclick="deletePost('${post.id}', this)">🗑</button>
         </div>
       `}

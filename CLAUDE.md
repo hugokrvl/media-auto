@@ -694,7 +694,7 @@ Pipeline rapide :
    MARCHÉ / TENDANCE → `people: []` (→ photo concept). 2+ personnes **uniquement** si toutes
    protagonistes du MÊME événement. `image_query` doit coller au **TON** (pas de hausse pour
    une chute, pas de cliché générique). `companies` retiré (logos abandonnés).
-5. **Image = héros** (`build_image`), par ordre :
+5. **Image = héros** (`image_candidates`, générateur LAZY testé un à un par la barrière QA §6), par ordre :
    - **≥ 2 dirigeants** → **MONTAGE PRO** (`montage.py`) : portraits **détourés** (`rembg`,
      modèle **configurable via `REMBG_MODEL`** — défaut `isnet-general-use` ~178 Mo, bords nets
      pour un rendu pro ; `u2netp` ~4 Mo en repli léger / local) sur fond dégradé HK + glow
@@ -710,9 +710,18 @@ Pipeline rapide :
    le **DIRECTEUR ARTISTIQUE** : l'IA **regarde le post final** (image + titre) et note 0-10.
    **Rejette** (coherent=false) si : la personne montrée n'est pas le vrai sujet ; l'image
    contredit le sens (hausse pour une chute) ; image **pas pro** (torse nu, meme, groupe flou,
-   cosplay, capture, cassée/sombre) ; cliché 100 % générique. Sous `BREAKING_COHERENCE_MIN`
-   (défaut **6**) → **post ignoré**. (Si Mistral indispo → on ne bloque pas.)
-7. Légende (`generator`, Mistral) + sauvegarde Supabase (`chart_type` = `breaking`/`montage`).
+   cosplay, capture, cassée/sombre) ; **texte incrusté illisible/coupé/glyphes manquants** ;
+   cliché 100 % générique. Sous `BREAKING_COHERENCE_MIN` (défaut **6**) → l'image est **rejetée**.
+   (Si Mistral indispo → on ne bloque pas.)
+
+   **AUTO-CORRECTION** (`main`) : si un candidat est rejeté, on **refait automatiquement** avec
+   le candidat suivant (`image_candidates`), jusqu'à `BREAKING_MAX_ATTEMPTS` (3). Les essais
+   ratés sont **conservés** : uploadés + stockés dans `attempts` (jsonb `[{image, raison, score,
+   type}]`). Si aucun candidat ne passe → post abandonné. Le site (§9) affiche un bouton **« ⚑
+   Essais »** à côté de « Supprimer » : **gris** si réussi du 1er coup, **vert** s'il a fallu des
+   essais → au clic, modale des versions rejetées (image + note IA + raison).
+7. Légende (`generator`, Mistral) + sauvegarde Supabase (`chart_type` = `breaking`/`montage`,
+   `attempts` = essais ratés).
 
 > Logos d'entreprise : abandonnés — aucune source gratuite haute résolution (Clearbit mort,
 > favicons 48px pixelisés, Wikipédia incohérent). La **figure emblématique** remplit ce rôle.
@@ -839,7 +848,9 @@ create table posts (
   needs_transcript boolean default false,  -- vidéo sans script auto -> à compléter
   pending_transcript text,                 -- script collé sur le site, en attente de retraitement
   -- Carrousel « étude data » (pipeline nocturne)
-  slides text[]                            -- URLs des slides (couverture → graphe → à retenir → verdict)
+  slides text[],                           -- URLs des slides (couverture → graphe → à retenir → verdict)
+  -- Barrière QA (auto-correction breaking, §7.6)
+  attempts jsonb                           -- essais ratés [{image, raison, score, type}] avant la version validée
 );
 
 alter table posts enable row level security;
@@ -856,6 +867,7 @@ alter table posts add column if not exists update_of uuid;
 alter table posts add column if not exists needs_transcript boolean default false;
 alter table posts add column if not exists pending_transcript text;
 alter table posts add column if not exists slides text[];   -- carrousels « étude data » (§7.8)
+alter table posts add column if not exists attempts jsonb;  -- essais ratés barrière QA (§7.6)
 ```
 > Compatibilité : si la migration n'est pas faite, `storage.py` retombe sur un insert
 > sans ces colonnes (le dédup perd la mémoire des chiffres entre deux nuits ; **sans
