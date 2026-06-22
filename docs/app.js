@@ -72,7 +72,7 @@ function renderPosts() {
   // Filtre par vue ("pending" regroupe aussi les transcriptions manquantes / en cours)
   if (currentView !== "history") {
     if (currentView === "pending") {
-      posts = posts.filter(p => ["pending", "needs_transcript", "to_regenerate"].includes(p.status));
+      posts = posts.filter(p => ["pending", "needs_transcript", "to_regenerate", "to_generate"].includes(p.status));
     } else {
       posts = posts.filter(p => p.status === currentView);
     }
@@ -180,8 +180,8 @@ function makeCard(post) {
       <p class="card-source">📰 ${esc(post.source)}</p>
       <p class="card-caption">${esc((post[captionKey] || "").substring(0, 200))}</p>
 
-      ${post.status === "to_regenerate" ? `
-        <div class="regen-pending">⏳ Génération en cours… (≤ 15 min, ou « Run workflow » sur GitHub)</div>
+      ${["to_regenerate", "to_generate"].includes(post.status) ? `
+        <div class="regen-pending">⏳ Génération en cours… (≤ 15 min, ou « Run workflow » → Retraitement sur GitHub)</div>
       ` : (post.status === "pending" || post.status === "needs_transcript") ? `
         ${post.status === "needs_transcript" ? transcriptBox(post) : ""}
         <div class="network-select" data-post="${post.id}">
