@@ -687,10 +687,13 @@ Pipeline rapide :
 3. **Jugement IA EN LOT** (`judge`, 1 seul appel `llm`) : ne garde que `breaking==true`
    & `score ≥ BREAKING_SCORE_MIN` (7), cap `BREAKING_MAX_PER_SCAN` (2). Sécurité : si
    aucun fournisseur IA qualité (Mistral/Gemini), le scan s'abstient (rien posté).
-4. **Enrichissement** (`enrich`) : titre FR percutant qui **colle au sujet** + entités.
-   **Figure emblématique** : si le sujet porte sur une ENTREPRISE, l'IA sort son
-   dirigeant emblématique **même non cité** (Strategy→Saylor, Tesla→Musk, Nvidia→Huang,
-   OpenAI→Altman…) → vrai visage reconnaissable. Renvoie aussi `companies` (+ domaine).
+4. **Enrichissement** (`enrich`) : titre FR percutant qui **colle au sujet** + `people`.
+   **Règle figure STRICTE** (anti mauvais visage) : une personne seulement si elle est nommée
+   OU le dirigeant emblématique de **L'ENTREPRISE précise** du sujet (OpenAI→Altman, Palantir→Karp…).
+   **Jamais** une figure ajoutée juste parce qu'elle est connue du secteur ; un sujet PAYS /
+   MARCHÉ / TENDANCE → `people: []` (→ photo concept). 2+ personnes **uniquement** si toutes
+   protagonistes du MÊME événement. `image_query` doit coller au **TON** (pas de hausse pour
+   une chute, pas de cliché générique). `companies` retiré (logos abandonnés).
 5. **Image = héros** (`build_image`), par ordre :
    - **≥ 2 dirigeants** → **MONTAGE PRO** (`montage.py`) : portraits **détourés** (`rembg`,
      modèle **configurable via `REMBG_MODEL`** — défaut `isnet-general-use` ~178 Mo, bords nets
@@ -703,12 +706,12 @@ Pipeline rapide :
    - Filet : si le portrait n'a pas de photo Wikipédia → repli concept (jamais d'image cassée).
    - **Anti mot-ambigu** : sans dirigeant, on prend la photo CONCEPT (requête IA) AVANT la
      cascade Wikipédia par mots du titre (sinon « Codex » → manuscrit médiéval, « Visa » → document).
-6. **VÉRIFICATION VISION** (`verify_coherence`, Mistral vision `generate_json_image`) :
-   l'IA **regarde le post final** (image + titre) et juge si l'image illustre vraiment le
-   sujet (`score 0-10`). Un portrait d'une personne liée OU une photo concept = cohérent ;
-   rejet seulement si l'image n'a MANIFESTEMENT rien à voir. Sous `BREAKING_COHERENCE_MIN`
-   (défaut 5) → **post ignoré** (jamais publié). Ex validé : Altman 10/10 publié,
-   manuscrit « Bible du Diable » 2/10 rejeté. (Si Mistral indispo → on ne bloque pas.)
+6. **VÉRIFICATION VISION** (`verify_coherence`, Mistral vision `generate_json_image`) — joue
+   le **DIRECTEUR ARTISTIQUE** : l'IA **regarde le post final** (image + titre) et note 0-10.
+   **Rejette** (coherent=false) si : la personne montrée n'est pas le vrai sujet ; l'image
+   contredit le sens (hausse pour une chute) ; image **pas pro** (torse nu, meme, groupe flou,
+   cosplay, capture, cassée/sombre) ; cliché 100 % générique. Sous `BREAKING_COHERENCE_MIN`
+   (défaut **6**) → **post ignoré**. (Si Mistral indispo → on ne bloque pas.)
 7. Légende (`generator`, Mistral) + sauvegarde Supabase (`chart_type` = `breaking`/`montage`).
 
 > Logos d'entreprise : abandonnés — aucune source gratuite haute résolution (Clearbit mort,

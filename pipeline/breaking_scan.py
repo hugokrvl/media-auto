@@ -36,7 +36,7 @@ import dedup
 RECENT_MIN     = int(os.environ.get("BREAKING_RECENT_MIN", "45"))
 MAX_PER_SCAN   = int(os.environ.get("BREAKING_MAX_PER_SCAN", "2"))
 SCORE_MIN      = int(os.environ.get("BREAKING_SCORE_MIN", "7"))
-COHERENCE_MIN  = int(os.environ.get("BREAKING_COHERENCE_MIN", "5"))
+COHERENCE_MIN  = int(os.environ.get("BREAKING_COHERENCE_MIN", "6"))
 VERTICALS      = {"ia", "crypto", "quantique", "tech", "finance"}
 
 
@@ -140,28 +140,33 @@ def enrich(a: dict) -> dict:
     prompt = (
         f"Article : {a['title']}\nSource : {a['source']}\nRésumé : {a['summary'][:300]}\n\n"
         "Donne en JSON :\n"
-        '{"title_fr":"<titre FR percutant ≤90 car., colle au sujet>",'
+        '{"title_fr":"<titre FR percutant ≤90 car., colle EXACTEMENT au sujet>",'
         '"subtitle_fr":"<angle en 4-6 mots>",'
         '"people":[{"name":"<personne réelle, nom complet>","org":"<société>"}],'
-        '"companies":[{"name":"<entreprise clé>","domain":"<domaine web, ex: tesla.com>"}],'
-        '"image_query":"<2-3 mots-clés EN pour illustrer si ni personne ni entreprise>"}\n'
-        "people : personnes réelles clés (max 3). IMPORTANT : si le sujet porte surtout "
-        "sur une ENTREPRISE, inclus sa FIGURE EMBLÉMATIQUE même non citée — ex : "
-        "Strategy/MicroStrategy→Michael Saylor, Tesla→Elon Musk, Nvidia→Jensen Huang, "
-        "OpenAI→Sam Altman, Apple→Tim Cook, Meta→Mark Zuckerberg, Amazon→Andy Jassy. "
-        "companies : entreprises clés du sujet avec leur domaine web (pour le logo), max 2. "
-        "Sinon listes vides."
+        '"image_query":"<scène concrète EN, 3-5 mots, à utiliser si people est VIDE>"}\n\n'
+        "RÈGLE people (CRUCIAL — éviter de mettre un MAUVAIS visage) :\n"
+        "- Une personne SEULEMENT si elle est VRAIMENT au cœur de CETTE actu : soit nommée "
+        "dans le titre/résumé, soit le dirigeant emblématique de L'ENTREPRISE précise dont "
+        "parle le sujet (OpenAI→Sam Altman, Tesla→Elon Musk, Nvidia→Jensen Huang, "
+        "Apple→Tim Cook, Palantir→Alex Karp, MicroStrategy→Michael Saylor…).\n"
+        "- N'ajoute JAMAIS quelqu'un juste parce qu'il est connu du secteur. Si le sujet est "
+        "un PAYS, un MARCHÉ, une TENDANCE, une techno, ou plusieurs entreprises non liées → "
+        "people: [] (on prendra une photo concept).\n"
+        "- Mets 2+ personnes SEULEMENT si elles sont TOUTES protagonistes du MÊME événement "
+        "(deux dirigeants qui négocient, un rachat A↔B, un face-à-face). Sinon UNE seule.\n\n"
+        "RÈGLE image_query (si people vide) : une scène CONCRÈTE qui colle au sujet ET à son "
+        "TON. Ex : chute du pétrole→'oil price crash red chart' ; pénurie→'empty gas station' ; "
+        "JAMAIS le sens contraire (pas de flèche verte/croissance pour une baisse). Évite les "
+        "clichés génériques (poignée de main, pièces de monnaie, ampoule)."
     )
     res = llm.generate_json(prompt, _ENRICH_SYS, max_tokens=600, temperature=0.4)
     if res:
         a["title_fr"] = (res.get("title_fr") or a["title"]).strip()[:120]
         a["subtitle_fr"] = (res.get("subtitle_fr") or "").strip()[:50]
         a["people"] = [p for p in (res.get("people") or []) if p.get("name")][:3]
-        a["companies"] = [c for c in (res.get("companies") or []) if c.get("name")][:2]
         a["image_query"] = res.get("image_query", "")
     else:
         a["people"] = []
-        a["companies"] = []
     return a
 
 
@@ -229,12 +234,16 @@ def verify_coherence(img_bytes: bytes, a: dict, image_desc: str) -> tuple[bool, 
         return True, 10, "(vérif désactivée)"
     title = a.get("title_fr") or a.get("title", "")
     prompt = (
-        f'Tu vérifies la cohérence d\'un post d\'actualité. SUJET du titre : "{title}". '
-        f"La photo de fond est censée être : {image_desc}. REGARDE l'image. "
-        "RÈGLES : un PORTRAIT d'une personne liée au sujet (dirigeant, personnalité) = COHÉRENT ; "
-        "une photo CONCEPT du thème = COHÉRENT. Mets coherent=false UNIQUEMENT si l'image n'a "
-        "MANIFESTEMENT RIEN à voir (ex : manuscrit/peinture ancienne pour une actu tech, "
-        "animal pour la finance, paysage sans rapport). "
+        "Tu es DIRECTEUR ARTISTIQUE d'un média sérieux. Juge si cette image est DIGNE D'ÊTRE "
+        f'PUBLIÉE pour ce post.\nTITRE : "{title}"\nImage censée montrer : {image_desc}.\n'
+        "REGARDE vraiment l'image et note-la de 0 à 10. Mets coherent=false (note basse) si :\n"
+        "- la/les PERSONNE(S) montrée(s) ne sont PAS le vrai sujet du titre ;\n"
+        "- l'image CONTREDIT le sens (ex : flèche verte / hausse pour une chute ou un péril) ;\n"
+        "- l'image n'est PAS professionnelle : torse nu, meme, photo de GROUPE floue, "
+        "déguisement/cosplay, capture d'écran, image cassée ou trop sombre/illisible ;\n"
+        "- cliché 100 % générique sans lien précis avec ce sujet.\n"
+        "coherent=true (note haute) SEULEMENT si l'image est PRO et colle au sujet ET au ton : "
+        "le portrait de LA bonne personne, ou une photo concept précise et cohérente avec l'angle.\n"
         'JSON : {"coherent":<bool>,"score":<0-10>,"raison":"<courte>"}'
     )
     res = mistral.generate_json_image(prompt, img_bytes)
