@@ -360,6 +360,60 @@ async function supabaseDelete(id) {
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
 }
 
+// ── Créer un post depuis un texte collé (→ carrousel décryptage) ─────────────
+function openCreate() {
+  const cats = ["general", "finance", "tech", "ia", "crypto", "quantique", "sport", "factcheck"];
+  document.getElementById("modal-content").innerHTML = `
+    <h3 style="font-size:16px;font-weight:800;margin-bottom:6px">✍️ Créer un post depuis un texte</h3>
+    <p style="font-size:12px;color:var(--text-dim);margin-bottom:14px">Colle une transcription YouTube, un article, des notes… L'IA fait le tri pertinent et génère un <b>carrousel décryptage</b> (6-8 slides). Économe en tokens.</p>
+    <input id="cr-title" class="cr-input" placeholder="Titre (optionnel — l'IA en proposera un)" />
+    <select id="cr-cat" class="cr-input">
+      ${cats.map(c => `<option value="${c}">${c}</option>`).join("")}
+    </select>
+    <textarea id="cr-text" class="cr-text" placeholder="Colle ton texte ici (transcription, article…)"></textarea>
+    <button class="btn-generate" onclick="submitCreate(this)">⚙️ Générer le carrousel</button>`;
+  document.getElementById("modal").style.display = "flex";
+}
+
+async function submitCreate(btn) {
+  const text = (document.getElementById("cr-text").value || "").trim();
+  if (text.length < 200) { alert("Colle un texte plus long (au moins quelques paragraphes)."); return; }
+  const title = (document.getElementById("cr-title").value || "").trim();
+  const cat = document.getElementById("cr-cat").value || "general";
+  btn.disabled = true; btn.textContent = "Envoi…";
+  try {
+    await supabaseInsert({
+      id: crypto.randomUUID(),
+      created_at: new Date().toISOString(),
+      status: "to_generate",
+      pending_transcript: text,
+      article_title: title || "Décryptage en préparation…",
+      category: cat,
+      source: "Texte collé",
+      chart_type: "decryptage",
+    });
+    closeModal();
+    alert("✅ Envoyé ! Le carrousel se génère (≤ 15 min, ou « Run workflow » → Retraitement sur GitHub). Il apparaîtra ici en « En attente ».");
+  } catch (err) {
+    btn.disabled = false; btn.textContent = "⚙️ Générer le carrousel";
+    alert("Erreur : " + err.message);
+  }
+}
+
+async function supabaseInsert(row) {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/posts`, {
+    method: "POST",
+    headers: {
+      "apikey": SUPABASE_ANON_KEY,
+      "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+      "Content-Type": "application/json",
+      "Prefer": "return=minimal",
+    },
+    body: JSON.stringify(row),
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+}
+
 // ── Modal ───────────────────────────────────────────────────────────────────
 function openModal(postId) {
   const post = allPosts.find(p => p.id === postId);

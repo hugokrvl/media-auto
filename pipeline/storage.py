@@ -166,9 +166,18 @@ def get_posts_to_regenerate() -> list[dict]:
     return [p for p in (res.data or []) if (p.get("pending_transcript") or "").strip()]
 
 
-def update_post_content(post_id: str, article: dict, captions: dict,
-                        image_urls: dict, status: str = "pending") -> None:
-    """Met à jour un post existant après regénération (transcription collée)."""
+def get_posts_to_generate() -> list[dict]:
+    """Posts créés DEPUIS UN TEXTE collé sur le site (status='to_generate', §9.2)."""
+    sb = get_client()
+    res = (sb.table("posts").select("*")
+           .eq("status", "to_generate")
+           .order("created_at", desc=True).execute())
+    return [p for p in (res.data or []) if (p.get("pending_transcript") or "").strip()]
+
+
+def update_post_content(post_id: str, article: dict, captions: dict, image_urls: dict,
+                        status: str = "pending", slides: list = None) -> None:
+    """Met à jour un post existant après regénération (transcription/texte collé)."""
     sb = get_client()
     sb.table("posts").update({
         "article_title": article.get("title", ""),
@@ -182,6 +191,7 @@ def update_post_content(post_id: str, article: dict, captions: dict,
         "image_twitter": image_urls.get("twitter", ""),
         "image_instagram": image_urls.get("instagram", ""),
         "image_linkedin": image_urls.get("linkedin", ""),
+        "slides": slides or None,
         "status": status,
         "needs_transcript": False,
         "pending_transcript": None,

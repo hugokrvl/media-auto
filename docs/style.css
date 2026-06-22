@@ -75,6 +75,37 @@ nav { display: flex; gap: 4px; }
 }
 .filters select:focus { border-color: var(--yellow); }
 
+.create-btn {
+  background: var(--yellow);
+  color: #15130c;
+  border: none;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 800;
+  padding: 8px 16px;
+  border-radius: 8px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.create-btn:hover { opacity: 0.9; }
+
+/* Formulaire « Créer depuis un texte » */
+.cr-input, .cr-text {
+  width: 100%;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13px;
+  padding: 9px 10px;
+  border-radius: 8px;
+  margin-bottom: 10px;
+  box-sizing: border-box;
+  outline: none;
+}
+.cr-text { min-height: 200px; max-height: 50vh; resize: vertical; line-height: 1.5; margin-bottom: 12px; }
+.cr-input:focus, .cr-text:focus { border-color: var(--yellow); }
+
 /* ── Stats Bar ── */
 #stats-bar {
   display: flex;

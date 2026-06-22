@@ -53,13 +53,13 @@ def _hero_stat(article):
 
 
 # ── Slides ───────────────────────────────────────────────────────────────────
-def _slide_cover(article):
+def _slide_cover(article, eyebrow="ÉTUDE DATA · HK MÉDIA"):
     """Slide 1 — couverture éditoriale : eyebrow + titre serif + chiffre héros + hint."""
     fig, ax = _base_fig(article.get("category", ""))
     F = fig._hk_fonts
     figH = fig.get_size_inches()[1]
 
-    ax.text(0.075, 0.80, "ÉTUDE DATA · HK MÉDIA", ha="left", va="top", color=B.MUSTARD_DK,
+    ax.text(0.075, 0.80, eyebrow, ha="left", va="top", color=B.MUSTARD_DK,
             fontproperties=F["body_sb"], fontsize=14, zorder=5)
 
     title = (article.get("title_fr") or article.get("title", "")).strip()
@@ -112,13 +112,13 @@ def _slide_points(article):
     return D._finish(fig)
 
 
-def _slide_takeaway(article):
-    """Slide 4 — « Le verdict » : la conclusion (insight) en une phrase + CTA."""
+def _slide_takeaway(article, label="LE VERDICT"):
+    """Dernière slide — la conclusion (insight) en une phrase + CTA."""
     fig, ax = _base_fig(article.get("category", ""))
     F = fig._hk_fonts
     figH = fig.get_size_inches()[1]
 
-    ax.text(0.075, 0.80, "LE VERDICT", ha="left", va="top", color=B.MUSTARD_DK,
+    ax.text(0.075, 0.80, label, ha="left", va="top", color=B.MUSTARD_DK,
             fontproperties=F["body_sb"], fontsize=15, zorder=5)
 
     insight = (article.get("insight") or article.get("subtitle_fr")
@@ -156,6 +156,42 @@ def generate_carousel(article: dict) -> list[bytes]:
     return slides
 
 
+# ── Décryptage (texte collé → carrousel long) ────────────────────────────────
+def _slide_section(article, num, total, titre, points):
+    """Slide de section d'un décryptage : titre + « PARTIE n/total » (sous-titre) + points."""
+    fig, ax = _base_fig(article.get("category", ""))
+    top = D._draw_header(fig, ax, titre or "—", f"PARTIE {num}/{total}")
+    D._make_infographic(fig, ax, {"key_points": points}, top)
+    D._draw_footer(fig, ax, article.get("source", ""))
+    return D._finish(fig)
+
+
+def generate_decryptage(article: dict) -> list[bytes]:
+    """Carrousel DÉCRYPTAGE (6-8 slides) : couverture → sections → conclusion. À partir
+    d'un texte collé, enrichi en `sections` [{titre, points}] par analyzer.enrich_decryptage."""
+    slides = []
+    try:
+        slides.append(_slide_cover(article, eyebrow="DÉCRYPTAGE · HK MÉDIA"))
+    except Exception as e:
+        print(f"[DECRYPT] couverture KO ({type(e).__name__}: {e})")
+    sections = [s for s in (article.get("sections") or []) if s.get("points")][:6]
+    for i, sec in enumerate(sections, 1):
+        pts = [p for p in (sec.get("points") or []) if str(p).strip()][:4]
+        if not pts:
+            continue
+        try:
+            slides.append(_slide_section(article, i, len(sections), sec.get("titre", ""), pts))
+        except Exception as e:
+            print(f"[DECRYPT] section {i} KO ({type(e).__name__}: {e})")
+    try:
+        slides.append(_slide_takeaway(article, label="CE QU'IL FAUT RETENIR"))
+    except Exception as e:
+        print(f"[DECRYPT] conclusion KO ({type(e).__name__}: {e})")
+    if not slides:
+        slides = [D.generate_image(article, "instagram")]
+    return slides
+
+
 if __name__ == "__main__":
     sample = {
         "title_fr": "OpenAI lève 40 milliards et atteint 300 Md$ de valorisation",
@@ -176,3 +212,34 @@ if __name__ == "__main__":
             f.write(png)
         print(f"Slide {i} : {len(png) // 1024} KB")
     print(f"{len(slides)} slides générés.")
+
+    # ── Test DÉCRYPTAGE (texte collé → carrousel long) ──
+    decr = {
+        "title_fr": "Bitcoin : faut-il y croire pour les 20 ans à venir ?",
+        "subtitle_fr": "Décryptage du live · The Big Whale", "source": "YouTube",
+        "category": "crypto", "chart_type": "decryptage",
+        "insight": "Bitcoin n'est pas un actif refuge, mais une assurance contre la "
+                   "dégradation des monnaies — à intégrer avec mesure dans un portefeuille.",
+        "sections": [
+            {"titre": "Pourquoi la chute ?", "points": [
+                "Bitcoin a perdu ~50 % depuis son pic d'octobre (125 000 $)",
+                "Rotation des capitaux vers l'IA (SpaceX, OpenAI, Anthropic)",
+                "Sorties d'ETF : 12 Md$ cette année contre 60 Md$ en 2025"]},
+            {"titre": "La valeur sous-jacente", "points": [
+                "Rareté programmée : 21 millions de bitcoins maximum",
+                "Réseau ultra-sécurisé + effet de réseau croissant",
+                "Indépendant de toute banque centrale"]},
+            {"titre": "Les menaces", "points": [
+                "Gouvernance lente : aucun PDG, décisions communautaires",
+                "Quantique : Google alerte, migration estimée à 8 mois",
+                "Les États : la Chine a interdit le minage, le réseau n'a pas flanché"]},
+            {"titre": "Or numérique ?", "points": [
+                "Offre fixe + indépendance, comme l'or",
+                "Mais PAS une valeur refuge au sens assurance",
+                "L'or aussi fut décrié (vendu par les banques 1970-2000)"]},
+        ],
+    }
+    for i, png in enumerate(generate_decryptage(decr), 1):
+        with open(f"test_decr_{i}.png", "wb") as f:
+            f.write(png)
+    print(f"Décryptage : {len(decr['sections'])} sections rendues.")

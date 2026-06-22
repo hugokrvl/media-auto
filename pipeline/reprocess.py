@@ -16,6 +16,7 @@ import re
 import unicodedata
 
 import analyzer
+import carousel
 import dataviz
 import generator
 import storage
@@ -80,5 +81,51 @@ def run():
             pass
 
 
+def run_generate():
+    """Crée des posts DÉCRYPTAGE depuis un texte collé sur le site (status='to_generate').
+    Digest token-safe (8b) → structuration en sections (70b) → carrousel → 'pending'."""
+    posts = storage.get_posts_to_generate()
+    if not posts:
+        print("[GENERATE] Aucun texte collé à transformer.")
+        return 0
+    print(f"[GENERATE] {len(posts)} texte(s) collé(s) à transformer")
+    done = errors = 0
+    for post in posts:
+        try:
+            article = {
+                "title": post.get("article_title") or "Décryptage",
+                "url": post.get("article_url", ""),
+                "source": post.get("source") or "Texte collé",
+                "category": post.get("category") or "general",
+                "score": 8, "verified": True,
+                "pending_transcript": post.get("pending_transcript", ""),
+            }
+            analyzer.enrich_decryptage(article)
+            article["title"] = article.get("title_fr") or article["title"]  # titre affiché = title_fr
+            slides = carousel.generate_decryptage(article)
+            slug = _slugify(article["title"])
+            slide_urls = [storage.upload_image(png, f"{slug}_decr{n + 1}.png")
+                          for n, png in enumerate(slides)]
+            cover = slide_urls[0]
+            image_urls = {net: cover for net in ("instagram", "twitter", "linkedin")}
+            captions = generator.generate_captions(article)
+            storage.update_post_content(post["id"], article, captions, image_urls,
+                                        status="pending", slides=slide_urls)
+            done += 1
+            print(f"[GENERATE] ✓ Décryptage {len(slide_urls)} slides : {article['title'][:50]}")
+        except Exception as e:
+            errors += 1
+            print(f"[GENERATE] ✗ {type(e).__name__} sur '{post.get('id','')}': {e}")
+    print(f"=== Décryptages terminés : {done} créé(s) / {errors} erreur(s) ===")
+    if done:
+        try:
+            from notifier import notify
+            notify("Décryptage prêt ✓", f"{done} carrousel(s) généré(s) depuis ton texte, à valider.")
+        except Exception:
+            pass
+    return done
+
+
 if __name__ == "__main__":
     run()
+    run_generate()

@@ -174,14 +174,15 @@ def _triage_one(article: dict) -> dict:
                  _fill(TRIAGE_PROMPT, article, 350), max_tokens=180)
 
 
-def _digest_text(title: str, text: str) -> str:
+def _digest_text(title: str, text: str, max_chunks: int = 4, cap: int = 2500) -> str:
     """Map-reduce : compresse un texte long (article complet OU transcription) en un
     résumé dense en données, via le modèle pas cher (gros quota). '' si rien/échec.
-    Le 70b ne verra QUE ce condensé → tous les chiffres captés, tokens 70b préservés."""
+    Le 70b ne verra QUE ce condensé → tous les chiffres captés, tokens 70b préservés.
+    `max_chunks` : nombre de morceaux digérés ; `cap` : longueur max du condensé final."""
     text = (text or "").strip()
     if not text:
         return ""
-    chunks = [text[i:i + DIGEST_CHARS] for i in range(0, len(text), DIGEST_CHARS)][:4]
+    chunks = [text[i:i + DIGEST_CHARS] for i in range(0, len(text), DIGEST_CHARS)][:max_chunks]
     parts = []
     for ch in chunks:
         try:
@@ -193,7 +194,7 @@ def _digest_text(title: str, text: str) -> str:
         except Exception as e:
             print(f"[ANALYZER] Digest KO ({type(e).__name__}) sur '{title[:40]}'")
         time.sleep(PACE_SECONDS)
-    return " ".join(parts)[:2500]
+    return " ".join(parts)[:cap]
 
 
 def _digest_transcript(article: dict) -> str:
@@ -230,6 +231,58 @@ def enrich_with_transcript(article: dict) -> dict:
         "chart_data": e.get("chart_data", []),
         "key_points": e.get("key_points", []),
         "insight": e.get("insight", ""),
+    })
+    return article
+
+
+# ── Décryptage : texte collé → carrousel long (sections) ──────────────────────
+DECRYPT_SYS = ("Tu es journaliste-vulgarisateur. Tu transformes un contenu (transcription "
+               "vidéo, article…) en un DÉCRYPTAGE clair en carrousel : des sections avec des "
+               "points percutants et FACTUELS. Tu n'inventes RIEN. Réponds UNIQUEMENT en JSON valide.")
+
+DECRYPT_PROMPT = """Transforme ce contenu en un DÉCRYPTAGE pour carrousel (4 à 6 sections).
+JSON EXACTEMENT :
+{
+  "title_fr": "<titre accrocheur EN FRANÇAIS, ≤75 caractères>",
+  "subtitle_fr": "<angle/source court, ≤50 caractères>",
+  "sections": [
+    {"titre": "<titre de section ≤38 caractères>",
+     "points": ["<fait clé EN FRANÇAIS, ≤90 car., chiffré si possible>", "...2 à 3 points"]}
+  ],
+  "insight": "<la conclusion à retenir en 1 phrase, ≤160 caractères>"
+}
+4 à 6 sections, 2-3 points chacune, FACTUELS (garde les chiffres). N'invente rien.
+
+Contenu :
+__BODY__"""
+
+
+def enrich_decryptage(article: dict) -> dict:
+    """Texte collé → décryptage en sections. Digest (8b, token-safe) pour les longs textes,
+    puis structuration (70b). Utilisé par reprocess.run_generate (création depuis le site)."""
+    text = (article.get("pending_transcript") or article.get("transcript")
+            or article.get("summary") or "").strip()
+    if not text:
+        return article
+    # Texte long → on le digère (découpe + extraction par le 8b) avant le 70b.
+    body = (_digest_text(article.get("title", ""), text, max_chunks=6, cap=5000)
+            if len(text) > 4000 else text)
+    prompt = DECRYPT_PROMPT.replace("__BODY__", (body or text)[:5000])
+    try:
+        e = _chat(GENERATION_MODEL, DECRYPT_SYS, prompt, max_tokens=1100)
+    except Exception as ex:
+        print(f"[ANALYZER] Décryptage KO: {type(ex).__name__}: {ex}")
+        e = {}
+    sections = [s for s in (e.get("sections") or [])
+                if isinstance(s, dict) and s.get("points")][:6]
+    article.update({
+        "title_fr": (e.get("title_fr") or article.get("title") or "Décryptage").strip()[:90],
+        "subtitle_fr": (e.get("subtitle_fr") or "").strip()[:50],
+        "sections": sections,
+        "insight": (e.get("insight") or "").strip()[:170],
+        "chart_type": "decryptage",
+        # key_points agrégés → sert aux captions (generator)
+        "key_points": [p for s in sections for p in (s.get("points") or [])][:6],
     })
     return article
 

@@ -915,6 +915,25 @@ Flux complet :
 - L'utilisateur peut aussi **approuver tel quel** (version description) sans coller de script.
 - Pour un traitement instantané : « Run workflow » sur l'onglet Actions du repo.
 
+### 9.2 Créer un post DEPUIS UN TEXTE collé (`carousel.generate_decryptage`)
+
+Bouton **« ✍️ Créer »** (header du site) → fenêtre où l'on **colle un texte** (transcription
+YouTube, article, notes) + titre/catégorie optionnels → génère un **carrousel DÉCRYPTAGE**
+(6-8 slides : couverture → sections → conclusion).
+
+Flux (réutilise l'infra transcription) :
+```
+1. Site : insert d'un post status='to_generate' + pending_transcript=<texte> (clé anon).
+2. reprocess.yml (15 min ou manuel) → reprocess.run_generate() :
+     analyzer.enrich_decryptage() : DIGEST token-safe (8b, _digest_text max_chunks=6) →
+       structuration en `sections` [{titre, points}] + insight (70b)
+     → carousel.generate_decryptage() (slides) → update_post_content(status='pending', slides)
+3. Le post arrive en 'pending' (carrousel), prêt à approuver. Notif ntfy.
+```
+- **Token-safe** : un long texte (transcription 1h) est digéré par le 8b (gros quota) avant le
+  70b → « tri pertinent et divisé », conso minimale (le 70b ne voit que ~5000 car. de condensé).
+- Le site statique ne lance pas l'IA (exposerait un token) : il met en **file** ; le workflow fait le travail.
+
 ---
 
 ## 10. Variables d'environnement / secrets
