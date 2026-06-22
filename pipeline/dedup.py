@@ -51,6 +51,28 @@ def topic_key(article: dict) -> str:
     return " ".join(sorted(_tokens(title)))
 
 
+def _is_num(tok: str) -> bool:
+    return tok.replace(".", "", 1).isdigit()
+
+
+def _anchors(title: str) -> set:
+    """Ancres à FORT signal, INVARIANTES à la langue / reformulation : noms propres
+    (mots avec une majuscule → AbbVie, Apogee, Nvidia…) + nombres significatifs (10.9, 40…).
+    Sert à reconnaître la MÊME info venue de sources différentes, là où le Jaccard du titre
+    échoue (seuls les noms propres survivent à deux formulations différentes)."""
+    out = set()
+    for w in re.findall(r"[A-Za-zÀ-ÿ][\wÀ-ÿ'&.\-]*", title or ""):
+        if any(c.isupper() for c in w):
+            wn = _norm(w).strip()
+            if len(wn) >= 3 and wn not in STOPWORDS:
+                out.add(wn)
+    for m in re.findall(r"\d+[.,]?\d*", title or ""):
+        num = m.replace(",", ".").rstrip(".")
+        if len(num.replace(".", "")) >= 2:      # ≥2 chiffres → écarte "3", années à part
+            out.add(num)
+    return out
+
+
 def data_sig(article: dict) -> str:
     """Empreinte de DONNÉES : 'label=valeur' triés (chart_data), sinon points clés."""
     parts = []
@@ -132,12 +154,19 @@ def classify(article: dict, history: list[dict]) -> tuple[str, dict | None]:
     tk = topic_key(article)
     ds = data_sig(article)
     a_tokens = set(tk.split())
+    a_anchors = _anchors(article.get("title_fr") or article.get("title", ""))
 
     best, best_sim = None, 0.0
     for h in history:
         # 1. Même URL = même article -> doublon, sauf si les chiffres ont bougé
         if url and (h.get("article_url") or "").strip() == url:
             return ("update" if _figures_changed(ds, h.get("data_sig", "")) else "duplicate"), h
+        # 1bis. MÊME INFO, SOURCE DIFFÉRENTE : ≥2 ancres partagées (dont ≥1 nom propre)
+        #       → même sujet même si le titre est formulé tout autrement (multi-sources/langue).
+        if len(a_anchors) >= 2:
+            shared = a_anchors & _anchors(h.get("article_title", ""))
+            if len(shared) >= 2 and any(not _is_num(s) for s in shared):
+                return ("update" if _figures_changed(ds, h.get("data_sig", "")) else "duplicate"), h
         # 2. Similarité de sujet (petit bonus si même catégorie)
         h_tokens = set((h.get("topic_key") or "").split())
         sim = _jaccard(a_tokens, h_tokens)

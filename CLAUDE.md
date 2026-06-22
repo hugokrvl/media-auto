@@ -414,6 +414,11 @@ dédup → carrousel (§7.8) → captions → Supabase. Marquées `source="Banqu
 article, deux empreintes comparées à l'historique 14 j (table `posts`) :
 - **`topic_key`** — de QUOI on parle : tokens du titre FR (sans accents/mots-outils, triés). Similarité = Jaccard.
 - **`data_sig`** — ce que DIT l'info : `label=valeur` des chiffres (ou points clés).
+- **Ancres entités/nombres** (`_anchors`) — noms propres (AbbVie, Apogee…) + nombres (10.9),
+  **invariants à la langue et à la reformulation**. Si deux articles partagent **≥2 ancres
+  dont ≥1 nom propre** → même info → **doublon**, même quand le Jaccard du titre échoue
+  (cas réel : une même news venue de sources différentes, titres tout autrement formulés —
+  le breaking dédoublonne d'ailleurs sur le titre anglais brut vs l'historique FR).
 
 | Verdict | Condition | Action |
 |---------|-----------|--------|
