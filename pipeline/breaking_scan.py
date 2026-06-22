@@ -193,19 +193,23 @@ def image_candidates(a: dict):
         yield (montage_renderer.make_montage_image(a, canon, badge="BREAKING"),
                "montage", f"un montage des portraits officiels de {names}")
 
-    # 2) PORTRAIT UNIQUE (rotation pour la variété, repli sur le canonique)
+    # 2) PORTRAIT UNIQUE : le CANONIQUE (infobox) d'ABORD (fiable), puis la rotation (variété)
+    #    en repli si le canonique a été rejeté. Évite que la rotation Commons ramène une
+    #    photo bizarre (ex. Demis Hassabis → un échiquier).
     if people:
         p0 = people[0]
-        url = image_fetch.portrait_for(p0["name"], seed=seed)
-        data = image_fetch.download_image(url) if url else None
-        if not data and canon:
-            data, p0 = canon[0]["photo_bytes"], {"name": canon[0]["name"], "org": canon[0]["label"]}
-        if data:
-            label = p0.get("org", "")
-            desc = f"un portrait de {p0['name']}" + (f" ({label})" if label else "")
-            yield (breaking_renderer.make_breaking_image(a, data, badge="BREAKING"), "breaking", desc)
+        label = p0.get("org", "")
+        desc = f"un portrait de {p0['name']}" + (f" ({label})" if label else "")
+        c0 = next((c for c in canon if c["name"] == p0["name"]), None)
+        if c0:
+            yield (breaking_renderer.make_breaking_image(a, c0["photo_bytes"], badge="BREAKING"),
+                   "breaking", desc)
+        rurl = image_fetch.portrait_for(p0["name"], seed=seed)
+        rdata = image_fetch.download_image(rurl) if rurl else None
+        if rdata:
+            yield (breaking_renderer.make_breaking_image(a, rdata, badge="BREAKING"), "breaking", desc)
 
-    # 3) PHOTO CONCEPT (requête IA) — propre et sûre, AVANT la cascade par mots du titre
+    # 3) PHOTO CONCEPT (Unsplash/Pexels sur la requête IA) — propre et sûre.
     seen = None
     if a.get("image_query"):
         url = (image_fetch._fetch_unsplash(a["image_query"])
@@ -214,15 +218,20 @@ def image_candidates(a: dict):
         if data:
             seen = url
             yield (breaking_renderer.make_breaking_image(a, data, badge="BREAKING"),
-                   "breaking", f"une photo d'illustration sur le thème « {a['image_query']} »")
+                   "breaking", f"une photo d'illustration sur « {a['image_query']} »")
 
-    # 4) REPLI : cascade Wikipédia (entités) → Unsplash (titre)
-    url = image_fetch.fetch_photo_url(a)
+    # 4) CONCEPT DE REPLI : Unsplash sur le THÈME de la catégorie (photo pro garantie).
+    #    On N'utilise PLUS la cascade Wikipédia par mots du titre (piège des mots ambigus :
+    #    « Faille » → faille de San Andreas, « Gemini » → constellation/insecte…).
+    cat_q = {"finance": "finance business office", "tech": "technology computer circuit",
+             "ia": "artificial intelligence technology", "crypto": "cryptocurrency bitcoin",
+             "quantique": "quantum computing laboratory"}.get(a.get("category", ""), "technology abstract")
+    url = image_fetch._fetch_unsplash(cat_q) or image_fetch._fetch_pexels(cat_q)
     if url and url != seen:
         data = image_fetch.download_image(url)
         if data:
             yield (breaking_renderer.make_breaking_image(a, data, badge="BREAKING"),
-                   "breaking", "une image d'illustration (origine variable)")
+                   "breaking", f"une photo d'illustration sur le thème {a.get('category', '')}")
 
 
 # ── Vérification de cohérence (vision) ─────────────────────────────────────────
@@ -234,18 +243,20 @@ def verify_coherence(img_bytes: bytes, a: dict, image_desc: str) -> tuple[bool, 
         return True, 10, "(vérif désactivée)"
     title = a.get("title_fr") or a.get("title", "")
     prompt = (
-        "Tu es DIRECTEUR ARTISTIQUE d'un média sérieux. Juge si cette image est DIGNE D'ÊTRE "
-        f'PUBLIÉE pour ce post.\nTITRE : "{title}"\nImage censée montrer : {image_desc}.\n'
-        "REGARDE vraiment l'image et note-la de 0 à 10. Mets coherent=false (note basse) si :\n"
-        "- la/les PERSONNE(S) montrée(s) ne sont PAS le vrai sujet du titre ;\n"
-        "- l'image CONTREDIT le sens (ex : flèche verte / hausse pour une chute ou un péril) ;\n"
-        "- l'image n'est PAS professionnelle : torse nu, meme, photo de GROUPE floue, "
-        "déguisement/cosplay, capture d'écran, image cassée ou trop sombre/illisible ;\n"
-        "- le TEXTE incrusté est illisible, coupé, déborde, se chevauche, ou contient des "
-        "carrés vides (glyphes manquants) / un layout cassé ;\n"
-        "- cliché 100 % générique sans lien précis avec ce sujet.\n"
-        "coherent=true (note haute) SEULEMENT si l'image est PRO et colle au sujet ET au ton : "
-        "le portrait de LA bonne personne, ou une photo concept précise et cohérente avec l'angle.\n"
+        "Tu es directeur artistique. Juge si LA PHOTO de fond de ce post colle au sujet.\n"
+        "IMPORTANT : NE JUGE PAS le gabarit graphique (cadre doré, bandeau de titre, badges, "
+        "logo HK) — c'est la charte FIXE et NORMALE du média. Juge UNIQUEMENT la photo.\n"
+        f'TITRE : "{title}"\nPhoto censée montrer : {image_desc}.\n'
+        "Note de 0 à 10. Mets coherent=false (note basse) SEULEMENT si :\n"
+        "- la PERSONNE montrée n'est PAS le sujet (mauvaise personne, ou un objet à la place) ;\n"
+        "- la photo n'a AUCUN rapport avec le sujet NI son thème (ex : faille géologique pour "
+        "une faille informatique, insecte/animal pour une actu tech, échiquier pour un portrait) ;\n"
+        "- la photo CONTREDIT le sens (hausse pour une chute / un péril) ;\n"
+        "- la photo n'est pas pro : torse nu, meme, déguisement/cosplay, photo de groupe floue ;\n"
+        "- le texte affiché contient des CARRÉS VIDES (glyphes manquants) ou est manifestement cassé.\n"
+        "coherent=true (note ≥6) si la photo est correcte : la BONNE personne, OU une photo concept "
+        "EN RAPPORT avec le thème (même générale, du moment qu'elle évoque le sujet — un processeur "
+        "pour une faille de puce, un smartphone pour une actu mobile, etc.).\n"
         'JSON : {"coherent":<bool>,"score":<0-10>,"raison":"<courte>"}'
     )
     res = mistral.generate_json_image(prompt, img_bytes)
