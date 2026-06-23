@@ -56,8 +56,10 @@ SOURCES = [
     # ── Intelligence artificielle ─────────────────────────────────────────────
     {"name": "OpenAI", "url": "https://openai.com/news/rss.xml", "category": "ia"},
     {"name": "Google DeepMind", "url": "https://deepmind.google/blog/rss.xml", "category": "ia"},
-    {"name": "Anthropic", "url": _gn("site:anthropic.com/news when:7d"), "category": "ia"},
-    {"name": "Mistral AI", "url": _gn("site:mistral.ai/news when:14d"), "category": "ia"},
+    # site:anthropic.com non indexé par Google News (0 résultat) → requête par sujet (marque).
+    {"name": "Anthropic", "url": _gn("Anthropic Claude AI when:7d"), "category": "ia"},
+    # site: sans le chemin /news (le path casse l'opérateur site:).
+    {"name": "Mistral AI", "url": _gn("site:mistral.ai when:21d"), "category": "ia"},
     {"name": "Hugging Face", "url": "https://huggingface.co/blog/feed.xml", "category": "ia"},
     {"name": "The Decoder", "url": "https://the-decoder.com/feed/", "category": "ia"},
     {"name": "VentureBeat AI", "url": "https://venturebeat.com/category/ai/feed/", "category": "ia"},
