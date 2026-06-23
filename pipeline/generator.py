@@ -25,24 +25,39 @@ def _groq():
 # relances le pipeline complet plusieurs fois le même jour (tests).
 GENERATION_MODEL = os.environ.get("GROQ_CAPTION_MODEL", "llama-3.3-70b-versatile")
 
-SYSTEM_PROMPT = """Tu es un community manager expert en médias économiques et tech.
-Tu rédiges des posts viraux, informatifs et engageants pour les réseaux sociaux.
-Tu écris TOUJOURS en FRANÇAIS, même si l'article source est en anglais.
-Ton style : direct, factuel, accrocheur. Pas de phrases creuses.
+SYSTEM_PROMPT = """Tu es le rédacteur en chef d'un média économique et tech sérieux et crédible.
+Tu rédiges des légendes SOBRES, FACTUELLES et PROFESSIONNELLES, toujours en FRANÇAIS
+impeccable (orthographe et grammaire PARFAITES, aucune faute).
+
+Règles ABSOLUES :
+- La légende RÉSUME l'information : en quelques lignes, le lecteur comprend l'essentiel
+  (ce qui se passe, les chiffres clés, pourquoi ça compte) SANS avoir vu le visuel.
+- Ton de journaliste : neutre, posé, crédible. JAMAIS de ton « assistant / IA », de
+  formules creuses (« Découvrez », « incontournable », « révolutionnaire ») ni de
+  superlatifs marketing.
+- Emojis : UN SEUL maximum par légende, et seulement s'il apporte vraiment quelque chose.
+  Zéro est préférable. Pas de hashtags à outrance.
+- N'invente AUCUN chiffre : utilise uniquement les faits fournis.
+
 Tu réponds UNIQUEMENT en JSON valide, sans markdown."""
 
-POST_PROMPT = """Rédige 3 versions de post pour cet article :
+POST_PROMPT = """Rédige 3 légendes pour ce post. Chacune doit RÉSUMER l'information ci-dessous
+pour qu'on en comprenne l'idée en quelques lignes.
 
-Article : {title}
+Sujet : {title}
 Source : {source}
 Catégorie : {category}
-Points clés : {key_data}
-Résumé : {summary}
+Faits / chiffres clés : {key_data}
+Résumé source : {summary}
 
-Écris EN FRANÇAIS. Contraintes :
-- Twitter/X : max 260 caractères, 2-3 hashtags pertinents, emoji autorisé
-- Instagram : 150-300 mots, storytelling, 8-12 hashtags thématiques, émojis
-- LinkedIn : 200-400 mots, ton professionnel-analytique, 3-5 hashtags, pas d'émoji excessif
+Consignes par réseau (EN FRANÇAIS, sobre, sans la moindre faute) :
+- twitter : 1 à 2 phrases avec l'essentiel (le fait + le chiffre clé). ≤ 260 caractères.
+  1 à 2 hashtags pertinents. Pas d'emoji (un seul à la rigueur).
+- instagram : 3 à 5 phrases courtes qui RÉSUMENT l'info (quoi, chiffres, pourquoi c'est
+  important). Ton clair et professionnel. 0 à 1 emoji MAXIMUM. Termine par 3 à 5 hashtags
+  pertinents (pas plus).
+- linkedin : 4 à 6 phrases, angle analytique et factuel (contexte + implication concrète).
+  AUCUN emoji. 3 hashtags professionnels.
 
 JSON attendu :
 {{
@@ -60,12 +75,14 @@ def generate_captions(article: dict) -> dict:
         kd = [f"{d.get('label', '')}: {d.get('value', '')}{d.get('unit', '')}"
               for d in article["chart_data"] if isinstance(d, dict)]
 
+    # Matière de résumé : résumé RSS si dispo, sinon l'insight (cas décryptage/brève collés).
+    summary = (article.get("summary") or article.get("insight") or "").strip()[:400]
     prompt = POST_PROMPT.format(
         title=article.get("title_fr") or article["title"],
         source=article["source"],
         category=article.get("category", ""),
         key_data=", ".join(kd) or "Voir article",
-        summary=article.get("summary", "")[:400],
+        summary=summary,
     )
 
     # 1200 tokens : 3 textes (Twitter + Instagram 150-300 mots + LinkedIn 200-400 mots)
@@ -105,7 +122,7 @@ def generate_captions(article: dict) -> dict:
         cat = article.get("category", "")
         captions = {
             "twitter":   t[:250],
-            "instagram": f"{t}\n\n{s}\n\n#{cat} #actualité".strip(),
+            "instagram": f"{t}\n\n{s}\n\n#{cat}".strip() if cat else f"{t}\n\n{s}".strip(),
             "linkedin":  f"{t}\n\n{s}".strip(),
         }
 
@@ -131,7 +148,7 @@ def generate_captions(article: dict) -> dict:
     # Twitter exclu (limite de caractères). Permet de retrouver l'article complet.
     url = article.get("url", "")
     if url and not url.startswith("https://news.google.com"):
-        link = f"\n\n📄 Article complet : {url}"
+        link = f"\n\nArticle complet : {url}"
         captions["instagram"] = captions.get("instagram", "") + link
         captions["linkedin"] = captions.get("linkedin", "") + link
 

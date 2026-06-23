@@ -208,6 +208,13 @@ sur le 8b (500k/jour) pour économiser le quota. Consommation 70b estimée : ~12
 > sur **`llama-3.3-70b-versatile`** (au lieu du 8b) → copy de secours bien meilleure.
 > Quota-safe : 1 run/nuit ≈ ~48k/100k tokens 70b même en repli. Pour économiser lors de tests
 > répétés le même jour, mettre `GROQ_CAPTION_MODEL=llama-3.1-8b-instant`.
+>
+> **Style éditorial des légendes** (`generator.py`, `SYSTEM_PROMPT`/`POST_PROMPT`) : ton de
+> **rédacteur en chef** — sobre, factuel, FR impeccable. La légende **RÉSUME l'info** en
+> quelques lignes (quoi / chiffres / pourquoi). **≤ 1 emoji**, pas de ton « IA » ni de
+> superlatifs marketing, peu de hashtags (IG 3-5, LinkedIn 3 sans emoji, X 1-2). La matière
+> de résumé = `summary` (RSS) ou, à défaut, l'`insight` (décryptage/brève). Lien « Article
+> complet : <url> » en clair (sans emoji) sur IG/LinkedIn.
 
 **Digest map-reduce — vidéos ET articles complets** (`analyzer._digest_text`) — un texte
 long (transcription d'1h ≈ 13k tokens, ou article complet) est trop gros pour le 70b
