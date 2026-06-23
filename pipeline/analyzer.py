@@ -399,12 +399,14 @@ JSON EXACTEMENT :
       "format": "breve",
       "titre": "<MAJ ≤14>", "titre2": "<MAJ ≤16>",
       "phrase": "<le fait en 1 phrase EN FRANÇAIS, ≤140 car.>", "fort": "<extrait de phrase ou ''>",
-      "photo": "<requête photo EN (ex: 'yann lecun portrait')>"
+      "photo": "<requête photo CONCEPT en anglais (2-4 mots) — décrit la SCÈNE/le THÈME, PAS un nom de personne car la banque d'images n'a aucun portrait ; ex: 'artificial intelligence laboratory', 'medical scanner machine'>",
+      "icon": "<icône de repli si pas de photo, parmi: __ICONS__>"
     }
   ]
 }
 RÈGLES : 1 SUJET = 1 POST. 1 à 4 posts. Décryptage = 3-4 slides, 3-5 points/slide, "icon"
 OBLIGATOIRE (liste), "fort" = extrait EXACT. Brève quand peu de matière (1 actu ponctuelle).
+La "photo" décrit toujours une SCÈNE/un CONCEPT (jamais un nom propre de personne).
 Garde les chiffres. Titres COURTS et percutants. N'invente RIEN.
 
 Contenu :
@@ -447,7 +449,9 @@ def split_into_posts(article: dict) -> list[dict]:
                 "format": "breve",
                 "breve_data": {"titre": titre or title_fr.upper()[:18], "titre2": titre2,
                                "phrase": phrase, "fort": (po.get("fort") or "").strip()[:60],
-                               "photo": (po.get("photo") or "").strip()[:60], "source": src},
+                               "photo": (po.get("photo") or "").strip()[:60], "source": src,
+                               "cover_icons": [(po.get("icon") or "").strip().lower()]
+                                              if po.get("icon") else []},
                 "title_fr": title_fr, "source": src, "category": cat,
                 "chart_type": "breve", "insight": phrase, "key_points": [phrase],
             })

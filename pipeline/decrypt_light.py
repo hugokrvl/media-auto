@@ -309,6 +309,11 @@ _KW = [
     (("adopt", "confiance", "communaut", "institutionnel", "utilisateur"), "groupe"),
     (("régul", "regul", "légal", "legal", "cadre", "loi", "juridique"), "document"),
     (("monnaie", "valeur", "actif", "réserve", "reserve"), "piece"),
+    (("intelligence artificielle", "ia ", " ia", "modèle", "modele", "machine learning",
+      "algorith", "robot", "techno", "scanner", "innovation", "recherche", "santé", "sante",
+      "médical", "medical"), "ampoule"),
+    (("patron", "dirigeant", "pdg", "fondateur", "entreprise", "start-up", "startup",
+      "boîte", "société", "societe", "équipe", "equipe", "recrut", "embauch"), "groupe"),
     (("bitcoin", "btc", "satoshi"), "bitcoin"),
 ]
 
@@ -435,20 +440,25 @@ def _footer(fig, ax, source=""):
 
 # ── Bloc « point » : icône + label + texte (avec surlignage) ─────────────────
 def _point_block(fig, ax, x, y_top, max_w, p, row_h, icon_R=46):
-    """Dessine un point dans une bande de hauteur row_h. Icône à gauche, texte à droite."""
+    """Dessine un point dans une bande de hauteur row_h. Icône à gauche, texte à droite.
+    L'icône est alignée sur le CENTRE du bloc texte (label + lignes) → plus de décalage."""
     F = fig._F
     label = (p.get("label") or "").strip()
     texte = (p.get("texte") or p.get("text") or "").strip()
     fort = p.get("fort") or p.get("highlight")
     icon = p.get("icon")
 
-    cy = y_top + row_h / 2
-    cx_icon = x + icon_R
-    _draw_icon(ax, icon, label, texte, cx_icon, _Y(cy), R=icon_R)
-
     tx = x + icon_R * 2 + 30
     tw = max_w - (icon_R * 2 + 30)
-    y = y_top + 6
+    # Mesure la hauteur réelle du bloc texte pour centrer icône ET texte ensemble.
+    label_h = 40 if label else 0
+    text_h = (_flow_rich(fig, ax, tx, 0, tw, _rich_words(texte, fort), F["body_md"], 22.5, 30,
+                         draw=False) if texte else 0)
+    block_h = label_h + text_h
+    text_top = y_top + max(0, (row_h - block_h) / 2)
+    _draw_icon(ax, icon, label, texte, x + icon_R, _Y(text_top + block_h / 2), R=icon_R)
+
+    y = text_top
     if label:
         ax.text(tx, _Y(y), label, ha="left", va="top", color=NAVY,
                 fontproperties=F["body_bold"], fontsize=27, zorder=5)
@@ -502,8 +512,10 @@ def _slide_section(fig, ax, sec, photo_img=None):
 
     points = [p for p in (sec.get("points") or []) if (p.get("label") or p.get("texte"))][:5]
     bottom = 150                              # marge basse (pied)
-    row_h = max(120, ((H - bottom) - top) / max(1, len(points)))
-    y = top
+    avail = (H - bottom) - top
+    # Bande par point plafonnée (sinon 2-3 points s'étalent sur tout le slide) + groupe centré.
+    row_h = min(220, avail / max(1, len(points)))
+    y = top + max(0, (avail - row_h * len(points)) / 2)
     for p in points:
         _point_block(fig, ax, MARGIN, y, CW, p, row_h)
         y += row_h
@@ -602,8 +614,13 @@ def _slide_breve(fig, ax, data, photo_img=None):
         _photo_band(ax, photo_img, band_top, band_h)
     else:                                          # pas de photo → gros pictogramme contextuel
         ic = (data.get("cover_icons") or [None])[0]
-        _draw_icon(ax, ic, data.get("titre", ""), data.get("phrase", ""),
-                   W / 2, _Y(band_top + band_h / 2), R=120)
+        fn = _icon_for(ic, data.get("titre", ""), data.get("phrase", ""))
+        if fn is ICONS["puce"]:                    # jamais une simple pastille en grand → ampoule
+            ic = "ampoule"
+        ax.add_patch(Circle((W / 2, _Y(band_top + band_h / 2)), 120,
+                     facecolor=PAPER_2, edgecolor=RING, lw=1.8, zorder=4))
+        _icon_for(ic, data.get("titre", ""), data.get("phrase", ""))(
+            ax, W / 2, _Y(band_top + band_h / 2), 120 * 0.52, NAVY)
     _footer(fig, ax, data.get("source", ""))
 
 
@@ -688,7 +705,7 @@ if __name__ == "__main__":
     breve = {"titre": "YANN LE CUN", "titre2": "QUITTE META",
              "phrase": "Le pionnier de l'IA lance sa propre entreprise de modèles de fondation européens.",
              "fort": "modèles de fondation européens", "photo": "",
-             "cover_icons": ["ampoule"], "source": "Les Échos"}
+             "cover_icons": [], "source": "Les Échos"}
     for i, png in enumerate(render_breve(breve), 1):
         with open(f"test_breve_{i}.png", "wb") as f:
             f.write(png)
