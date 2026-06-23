@@ -236,30 +236,52 @@ def enrich_with_transcript(article: dict) -> dict:
 
 
 # ── Décryptage : texte collé → carrousel long (sections) ──────────────────────
-DECRYPT_SYS = ("Tu es journaliste-vulgarisateur. Tu transformes un contenu (transcription "
-               "vidéo, article…) en un DÉCRYPTAGE clair en carrousel : des sections avec des "
-               "points percutants et FACTUELS. Tu n'inventes RIEN. Réponds UNIQUEMENT en JSON valide.")
+# Icônes line-art disponibles dans le renderer clair (decrypt_light.ICONS).
+DECRYPT_ICONS = ("reseau, cadenas, banque, echange, hausse, baisse, barres, bouclier, globe, "
+                 "ampoule, portefeuille, cible, alerte, horloge, piece, groupe, document, "
+                 "balance, bitcoin")
 
-DECRYPT_PROMPT = """Transforme ce contenu en un DÉCRYPTAGE pour carrousel (4 à 6 sections).
+DECRYPT_SYS = ("Tu es journaliste-vulgarisateur. Tu transformes un contenu (transcription "
+               "vidéo, article…) en un DÉCRYPTAGE visuel en carrousel : des slides au titre "
+               "fort, chaque point illustré d'une icône et d'un chiffre/mot-clé à surligner. "
+               "Tout EN FRANÇAIS, FACTUEL, tu n'inventes RIEN. Réponds UNIQUEMENT en JSON valide.")
+
+DECRYPT_PROMPT = """Transforme ce contenu en un DÉCRYPTAGE pour carrousel Instagram (3 à 5 slides).
 JSON EXACTEMENT :
 {
-  "title_fr": "<titre accrocheur EN FRANÇAIS, ≤75 caractères>",
-  "subtitle_fr": "<angle/source court, ≤50 caractères>",
-  "sections": [
-    {"titre": "<titre de section ≤38 caractères>",
-     "points": ["<fait clé EN FRANÇAIS, ≤90 car., chiffré si possible>", "...2 à 3 points"]}
+  "titre": "<ligne 1 du titre principal, MAJUSCULES, ≤14 car.>",
+  "titre2": "<ligne 2 du titre principal, MAJUSCULES, ≤16 car.>",
+  "intro": "<phrase d'accroche EN FRANÇAIS, ≤90 car.>",
+  "slides": [
+    {
+      "titre": "<ligne 1 du titre de slide, MAJUSCULES, ≤14 car.>",
+      "titre2": "<ligne 2, MAJUSCULES, ≤16 car. (peut être vide)>",
+      "photo": "<requête photo EN ANGLAIS si une vraie photo aide (ex: 'gold bitcoin coins'), sinon ''>",
+      "points": [
+        {
+          "label": "<2-4 mots, l'idée>",
+          "texte": "<fait EN FRANÇAIS, ≤95 car., chiffré si possible>",
+          "icon": "<UNE icône parmi: __ICONS__>",
+          "fort": "<le chiffre OU mot-clé À SURLIGNER, copié EXACTEMENT depuis 'texte', sinon ''>"
+        }
+      ]
+    }
   ],
-  "insight": "<la conclusion à retenir en 1 phrase, ≤160 caractères>"
+  "insight": "<conclusion à retenir, 1 phrase, ≤150 car.>",
+  "insight_fort": "<phrase-clé à surligner, copiée depuis 'insight', sinon ''>"
 }
-4 à 6 sections, 2-3 points chacune, FACTUELS (garde les chiffres). N'invente rien.
+RÈGLES : 3 à 5 slides ; 3-5 points par slide ; "icon" OBLIGATOIRE et choisi dans la liste ;
+"fort" doit être un EXTRAIT EXACT de "texte" (sinon "") ; "photo" sur 2 slides MAXIMUM (sinon "").
+Garde les chiffres. N'invente rien. Titres COURTS et percutants.
 
 Contenu :
 __BODY__"""
 
 
 def enrich_decryptage(article: dict) -> dict:
-    """Texte collé → décryptage en sections. Digest (8b, token-safe) pour les longs textes,
-    puis structuration (70b). Utilisé par reprocess.run_generate (création depuis le site)."""
+    """Texte collé → décryptage CLAIR (titre bicolore, icônes, surlignage). Digest (8b,
+    token-safe) pour les longs textes, puis structuration (70b). Utilisé par
+    reprocess.run_generate (création depuis le site, rendu par decrypt_light)."""
     text = (article.get("pending_transcript") or article.get("transcript")
             or article.get("summary") or "").strip()
     if not text:
@@ -267,22 +289,65 @@ def enrich_decryptage(article: dict) -> dict:
     # Texte long → on le digère (découpe + extraction par le 8b) avant le 70b.
     body = (_digest_text(article.get("title", ""), text, max_chunks=6, cap=5000)
             if len(text) > 4000 else text)
-    prompt = DECRYPT_PROMPT.replace("__BODY__", (body or text)[:5000])
+    prompt = DECRYPT_PROMPT.replace("__ICONS__", DECRYPT_ICONS).replace(
+        "__BODY__", (body or text)[:5000])
     try:
-        e = _chat(GENERATION_MODEL, DECRYPT_SYS, prompt, max_tokens=1100)
+        e = _chat(GENERATION_MODEL, DECRYPT_SYS, prompt, max_tokens=1500)
     except Exception as ex:
         print(f"[ANALYZER] Décryptage KO: {type(ex).__name__}: {ex}")
         e = {}
-    sections = [s for s in (e.get("sections") or [])
-                if isinstance(s, dict) and s.get("points")][:6]
+
+    # Nettoyage des slides + points
+    slides = []
+    for s in (e.get("slides") or [])[:5]:
+        if not isinstance(s, dict):
+            continue
+        pts = []
+        for p in (s.get("points") or [])[:5]:
+            if not isinstance(p, dict):
+                continue
+            txt = (p.get("texte") or p.get("text") or "").strip()
+            if not (p.get("label") or txt):
+                continue
+            pts.append({
+                "label": (p.get("label") or "").strip()[:34],
+                "texte": txt[:110],
+                "icon": (p.get("icon") or "").strip().lower(),
+                "fort": (p.get("fort") or "").strip()[:60],
+            })
+        if pts:
+            slides.append({
+                "titre": (s.get("titre") or "").strip()[:18],
+                "titre2": (s.get("titre2") or "").strip()[:20],
+                "photo": (s.get("photo") or "").strip()[:60],
+                "points": pts,
+            })
+
+    titre = (e.get("titre") or "").strip()[:18]
+    titre2 = (e.get("titre2") or "").strip()[:20]
+    if not titre and slides:                          # repli depuis la 1re slide / le titre brut
+        titre, titre2 = slides[0]["titre"], slides[0]["titre2"]
+    title_fr = (f"{titre} {titre2}".strip() or article.get("title") or "Décryptage")[:90]
+
     article.update({
-        "title_fr": (e.get("title_fr") or article.get("title") or "Décryptage").strip()[:90],
-        "subtitle_fr": (e.get("subtitle_fr") or "").strip()[:50],
-        "sections": sections,
+        "decrypt_data": {
+            "titre": titre or title_fr.upper()[:18],
+            "titre2": titre2,
+            "intro": (e.get("intro") or "").strip()[:100],
+            "insight": (e.get("insight") or "").strip()[:160],
+            "insight_fort": (e.get("insight_fort") or "").strip()[:60],
+            "cover_icons": [p["icon"] for s in slides for p in s["points"]
+                            if p["icon"]][:3] or ["reseau", "cadenas", "piece"],
+            "slides": slides,
+            "source": (article.get("source") or "").strip(),
+        },
+        "title_fr": title_fr,
+        "subtitle_fr": (e.get("intro") or "").strip()[:50],
+        "sections": slides,                            # compat (legacy)
         "insight": (e.get("insight") or "").strip()[:170],
         "chart_type": "decryptage",
-        # key_points agrégés → sert aux captions (generator)
-        "key_points": [p for s in sections for p in (s.get("points") or [])][:6],
+        # key_points agrégés → captions (generator)
+        "key_points": [p["texte"] for s in slides for p in s["points"]][:6],
     })
     return article
 

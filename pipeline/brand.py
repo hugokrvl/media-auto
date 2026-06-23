@@ -34,6 +34,8 @@ FONTS = {
     "Barlow-Regular.ttf": f"{_BASE}/barlow/Barlow-Regular.ttf",
     "Barlow-Medium.ttf": f"{_BASE}/barlow/Barlow-Medium.ttf",
     "Barlow-SemiBold.ttf": f"{_BASE}/barlow/Barlow-SemiBold.ttf",
+    "Barlow-Bold.ttf": f"{_BASE}/barlow/Barlow-Bold.ttf",
+    "Barlow-ExtraBold.ttf": f"{_BASE}/barlow/Barlow-ExtraBold.ttf",
 }
 
 _loaded = False
@@ -79,6 +81,8 @@ def fonts():
         "body": _fp("Barlow-Regular.ttf", "DejaVu Sans"),
         "body_md": _fp("Barlow-Medium.ttf", "DejaVu Sans"),
         "body_sb": _fp("Barlow-SemiBold.ttf", "DejaVu Sans", "bold"),
+        "body_bold": _fp("Barlow-Bold.ttf", "DejaVu Sans", "bold"),
+        "body_xb": _fp("Barlow-ExtraBold.ttf", "DejaVu Sans", "bold"),
     }
 
 

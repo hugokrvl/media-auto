@@ -167,26 +167,32 @@ def _slide_section(article, num, total, titre, points):
 
 
 def generate_decryptage(article: dict) -> list[bytes]:
-    """Carrousel DÉCRYPTAGE (6-8 slides) : couverture → sections → conclusion. À partir
-    d'un texte collé, enrichi en `sections` [{titre, points}] par analyzer.enrich_decryptage."""
-    slides = []
+    """Carrousel DÉCRYPTAGE — thème CLAIR éditorial (icônes line-art, titres bicolores,
+    surlignage or, bandeaux photo). Délégué à `decrypt_light` ; les données structurées
+    viennent de `analyzer.enrich_decryptage` (article['decrypt_data'])."""
+    import decrypt_light
+
+    data = article.get("decrypt_data")
+    if not data:
+        # Repli : reconstruit le minimum depuis l'ancien format `sections`.
+        sections = [s for s in (article.get("sections") or []) if s.get("points")][:5]
+        slides = []
+        for sec in sections:
+            pts = sec.get("points") or []
+            slides.append({"titre": (sec.get("titre") or "").strip()[:18], "titre2": "",
+                           "points": [p if isinstance(p, dict) else {"texte": str(p)}
+                                      for p in pts][:5]})
+        title = (article.get("title_fr") or article.get("title") or "Décryptage").upper()
+        data = {"titre": title[:18], "titre2": title[18:34], "slides": slides,
+                "intro": article.get("subtitle_fr", ""),
+                "insight": article.get("insight", ""),
+                "source": article.get("source", "")}
+
     try:
-        slides.append(_slide_cover(article, eyebrow="DÉCRYPTAGE · HK MÉDIA"))
+        slides = decrypt_light.render_decryptage(data)
     except Exception as e:
-        print(f"[DECRYPT] couverture KO ({type(e).__name__}: {e})")
-    sections = [s for s in (article.get("sections") or []) if s.get("points")][:6]
-    for i, sec in enumerate(sections, 1):
-        pts = [p for p in (sec.get("points") or []) if str(p).strip()][:4]
-        if not pts:
-            continue
-        try:
-            slides.append(_slide_section(article, i, len(sections), sec.get("titre", ""), pts))
-        except Exception as e:
-            print(f"[DECRYPT] section {i} KO ({type(e).__name__}: {e})")
-    try:
-        slides.append(_slide_takeaway(article, label="CE QU'IL FAUT RETENIR"))
-    except Exception as e:
-        print(f"[DECRYPT] conclusion KO ({type(e).__name__}: {e})")
+        print(f"[DECRYPT] renderer clair KO ({type(e).__name__}: {e})")
+        slides = []
     if not slides:
         slides = [D.generate_image(article, "instagram")]
     return slides

@@ -102,6 +102,7 @@ media-auto/
 │   ├── dedup.py           # doublon vs mise à jour (empreintes sujet + données)
 │   ├── dataviz.py         # moteur d'infographies HK (5 types)
 │   ├── carousel.py        # CARROUSEL « étude data » (couverture→graphe→à retenir→verdict) — §7.8
+│   ├── decrypt_light.py   # DÉCRYPTAGE thème CLAIR (icônes line-art, titres bicolores) — §9.2
 │   ├── opendata.py        # études issues de données ouvertes (Banque mondiale, sans clé) — §5.4
 │   ├── brand.py           # charte : couleurs, polices, helpers (fr(), variations())
 │   ├── breaking.py        # rendu post photo plein cadre (titre + chiffres jaunes) — §7.1
@@ -922,24 +923,40 @@ Flux complet :
 - L'utilisateur peut aussi **approuver tel quel** (version description) sans coller de script.
 - Pour un traitement instantané : « Run workflow » sur l'onglet Actions du repo.
 
-### 9.2 Créer un post DEPUIS UN TEXTE collé (`carousel.generate_decryptage`)
+### 9.2 Créer un post DEPUIS UN TEXTE collé — DÉCRYPTAGE thème CLAIR (`decrypt_light.py`)
 
 Bouton **« ✍️ Créer »** (header du site) → fenêtre où l'on **colle un texte** (transcription
-YouTube, article, notes) + titre/catégorie optionnels → génère un **carrousel DÉCRYPTAGE**
-(6-8 slides : couverture → sections → conclusion).
+YouTube, article, notes) → génère un **carrousel DÉCRYPTAGE** au **thème CLAIR éditorial**
+(≠ le reste du média qui reste sombre — préférence utilisateur explicite).
+
+**Style clair** (`pipeline/decrypt_light.py`, inspiré des décryptages Instagram « propres ») :
+fond **papier crème**, palette **navy + or**, **titres ALL-CAPS bicolores** (1 ligne bleu / 1
+ligne or), **icônes line-art** dessinées (≈19 icônes : `reseau`, `cadenas`, `banque`, `hausse`,
+`bouclier`, `globe`, `ampoule`, `portefeuille`, `alerte`, `horloge`, `piece`, `groupe`,
+`document`…), **chiffres/phrases-clés surlignés en or** (champ `fort`), **bandeaux photo**
+optionnels (Unsplash, 2 max/carrousel), pied **HK**. Slides 1080×**1350** (4:5), tout dessiné
+en coordonnées pixels (aspect égal → vrais cercles). Titres en **Barlow ExtraBold** (ajouté à
+`brand.fonts()`). Structure : **couverture** (titre + intro + 3 icônes) → **sections** (titre +
+points icône/label/texte) → **à retenir** (callout `insight` surligné).
 
 Flux (réutilise l'infra transcription) :
 ```
 1. Site : insert d'un post status='to_generate' + pending_transcript=<texte> (clé anon).
 2. reprocess.yml (15 min ou manuel) → reprocess.run_generate() :
-     analyzer.enrich_decryptage() : DIGEST token-safe (8b, _digest_text max_chunks=6) →
-       structuration en `sections` [{titre, points}] + insight (70b)
-     → carousel.generate_decryptage() (slides) → update_post_content(status='pending', slides)
-3. Le post arrive en 'pending' (carrousel), prêt à approuver. Notif ntfy.
+     analyzer.enrich_decryptage() : DIGEST token-safe (8b) → structuration (70b) en
+       `decrypt_data` {titre, titre2, intro, slides:[{titre,titre2,photo,
+        points:[{label,texte,icon,fort}]}], insight, insight_fort}
+     → carousel.generate_decryptage() → decrypt_light.render_decryptage() (slides)
+     → update_post_content(status='pending', slides)
+3. Le post arrive en 'pending' (carrousel clair), prêt à approuver. Notif ntfy.
 ```
 - **Token-safe** : un long texte (transcription 1h) est digéré par le 8b (gros quota) avant le
   70b → « tri pertinent et divisé », conso minimale (le 70b ne voit que ~5000 car. de condensé).
-- Le site statique ne lance pas l'IA (exposerait un token) : il met en **file** ; le workflow fait le travail.
+- L'IA choisit l'`icon` (parmi la liste) et le `fort` (extrait EXACT de `texte`) par point ;
+  repli mot-clé puis pastille si l'icône est absente/inconnue (`decrypt_light._icon_for`).
+- **Dégradations** : pas de clé Unsplash → slides sans bandeau (rendu propre quand même) ;
+  renderer KO → repli sur l'infographie simple. Le site statique met en **file** ; le workflow agit.
+- Test rendu : `python decrypt_light.py` (→ `test_decrypt_*.png`).
 
 ---
 
