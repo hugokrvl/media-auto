@@ -13,11 +13,11 @@ avec **validation humaine** avant publication. Tourne chaque nuit à 1h (Paris) 
 2. [Structure du dépôt](#2-structure-du-dépôt)
 3. [Services & comptes](#3-services--comptes-tous-gratuits)
 4. [Limites Groq & architecture 2 modèles](#4-limites-groq--architecture-2-modèles) (+ **stack IA qualité Mistral/Gemini §4.1**)
-5. [Sources (RSS · YouTube · Email)](#5-sources--pipelinesourcespy)
-6. [Dédup intelligent](#6-dédup-intelligent--pipelinededuppy)
-7. [Identité visuelle HK Média](#7-identité-visuelle--charte-hk-média) (dataviz · Breaking · images · sport §7.3 · marchés §7.4-5 · **moteur breaking §7.6** · **portraits/rotation §7.7**)
+5. [Sources (RSS · YouTube · Email)](#5-sources--pipelinesourcespy) (+ **texte complet §5** · **données ouvertes §5.4**)
+6. [Dédup intelligent](#6-dédup-intelligent--pipelinededuppy) (lexical + **juge sémantique**)
+7. [Identité visuelle HK Média](#7-identité-visuelle--charte-hk-média) (dataviz · Breaking · sport §7.3 · marchés §7.4-5 · **moteur breaking + QA/auto-correction §7.6** · portraits §7.7 · **carrousels « étude data » §7.8**)
 8. [Base de données Supabase](#8-base-de-données-supabase)
-9. [Site de planning](#9-site-de-planning-docs--github-pages)
+9. [Site de planning](#9-site-de-planning-docs--github-pages) (transcription §9.1 · **créer depuis un texte §9.2**)
 10. [Variables d'environnement / secrets](#10-variables-denvironnement--secrets)
 11. [Tests locaux](#11-tests-locaux)
 12. [Ordre de mise en place](#12-ordre-de-mise-en-place)
@@ -962,9 +962,28 @@ NEWSLETTER_PASSWORD      # mot de passe d'application (16 car.), PAS le mdp du c
 NEWSLETTER_IMAP          # optionnel : déduit du domaine si absent
 API_SPORTS_KEY           # résultats sportifs (§7.3) — 1 clé pour tous les sports api-sports.io.
                          #   OPTIONNEL : sans elle, seules les compétitions ESPN (CdM/Euro/Copa) tournent.
+FRED_API_KEY             # open data FRED (§5.4) — gratuit fred.stlouisfed.org. OPTIONNEL :
+                         #   sans elle, les études FRED sont ignorées (Banque mondiale/Eurostat/INSEE tournent).
 TWITTER_API_KEY / TWITTER_API_SECRET / TWITTER_ACCESS_TOKEN / TWITTER_ACCESS_SECRET
 INSTAGRAM_ACCESS_TOKEN / INSTAGRAM_BUSINESS_ID
 LINKEDIN_ACCESS_TOKEN / LINKEDIN_PERSON_ID
+```
+
+**Réglages de comportement** (tous OPTIONNELS, défaut entre parenthèses ; via env ou
+*Repository variable* GitHub) :
+```
+# Nocturne (études data)
+NIGHTLY_MAX_POSTS (7)            # carrousels/nuit max
+OPENDATA_MAX (2)                 # études open data/nuit · OPENDATA_ENABLED (1) · OPENDATA_TIMEOUT (15)
+FULLTEXT_FETCH (1)               # lecture texte complet des articles · FULLTEXT_MAX (10) · FULLTEXT_TIMEOUT (12)
+# Breaking
+BREAKING_RECENT_MIN (45) · BREAKING_MAX_PER_SCAN (2) · BREAKING_SCORE_MIN (7)
+BREAKING_COHERENCE_MIN (6)       # seuil barrière QA vision (§7.6)
+BREAKING_MAX_ATTEMPTS (3)        # essais image avant abandon (auto-correction §7.6)
+REMBG_MODEL (isnet-general-use)  # modèle de détourage des montages (§7.6)
+# Dédup
+DEDUP_MODEL (llama-3.1-8b-instant)   # petit modèle du juge sémantique (§6)
+# Groq (déjà documentés §4) : GROQ_TRIAGE_MODEL, GROQ_MODEL, GROQ_CAPTION_MODEL, GROQ_MAX_*, GROQ_PACE_*
 ```
 
 > 🔑 **Token cron-job.org** (déclencheur breaking, §7.6) : un **PAT GitHub fine-grained**
@@ -994,6 +1013,8 @@ Get-Content .env | ForEach-Object { $k,$v=$_.Split('=',2); [Environment]::SetEnv
 cd pipeline
 python validate_sources.py     # teste tous les flux RSS + YouTube en réel
 python dataviz.py              # génère test_*.png (rendu des 5 types)
+python carousel.py             # carrousels « étude data » + DÉCRYPTAGE (offline, → test_*.png)
+python article_fetch.py        # extraction texte complet d'un HTML (offline)
 python gallery.py             # planche-contact de toutes les variantes
 python _test_dedup.py          # logique dédup (offline, 6 cas)
 python _test_pipeline.py       # INTÉGRATION main.run() : open data + dédup + carrousel (offline, stubs)
@@ -1022,9 +1043,20 @@ python reprocess.py            # retraite les transcriptions collées (file Supa
 5. [x] Boîte newsletters Gmail + 2FA + mot de passe d'application → secrets
 6. [x] **Architecture 2 modèles** (8b triage / 70b génération) — voir §4
 7. [x] `validate_sources.py` → **30/30 sources OK** (flux morts remplacés par Google News)
-8. [ ] Premier vrai run (`workflow_dispatch`) → vérifier quotas Groq
-9. [ ] `docs/app.js` creds Supabase + activer GitHub Pages sur `/docs`
-10. [ ] Réseaux sociaux X / Instagram / LinkedIn (en dernier)
+8. [x] Premier vrai run (`workflow_dispatch`) → quotas OK
+9. [x] `docs/app.js` creds Supabase + GitHub Pages sur `/docs` → **site en ligne**
+10. [x] Secrets qualité : `MISTRAL_API_KEY`, `GEMINI_API_KEY`, `UNSPLASH_ACCESS_KEY`/`PEXELS_API_KEY`
+11. [ ] **⚠️ Migrations Supabase à lancer** (SQL Editor) — pour les features récentes :
+    ```sql
+    alter table posts add column if not exists slides text[];    -- carrousels « étude data » (§7.8)
+    alter table posts add column if not exists attempts jsonb;   -- barrière QA / essais ratés (§7.6)
+    ```
+    Sans elles : carrousels affichés en image simple, et le bouton « ⚑ Essais » reste gris.
+12. [ ] (Optionnel) `FRED_API_KEY` secret → active les études FRED (§5.4) ; *Repository variable*
+    `REMBG_MODEL` pour changer le modèle de détourage.
+13. [ ] **SÉCURITÉ** (reporté, prioritaire) : durcir la RLS + protéger l'admin (clé anon publique
+    + RLS `for all` = n'importe qui peut tout modifier/supprimer). Voir §8.
+14. [ ] Réseaux sociaux X / Instagram / LinkedIn (`poster/`, en dernier)
 
 ---
 
@@ -1047,16 +1079,26 @@ python reprocess.py            # retraite les transcriptions collées (file Supa
 | ✅ | **Portraits : figures récurrentes + rotation** | 66 figures (`figures.py`) ; pool ~9 portraits solo Commons (filtres groupe/famille/data-viz/peinture + anti même-shooting) ; rotation par article — FAIT (§7.7) |
 | ⏳ | **Isoler une personne d'une photo de groupe** | nécessite reconnaissance faciale (~200 Mo) ; reporté — la rotation solo suffit pour l'instant |
 | ✅ | **Verticales IA/blockchain/quantique** | +18 sources directes + catégories/badges dédiés (IA violet, CRYPTO orange, QUANTIQUE cyan) — FAIT (§5) |
+| ✅ | **Nocturne → rubrique « ÉTUDES DATA »** | recentrage 100 % dataviz : chaque post = **carrousel** (couverture→graphe→à retenir→verdict) ; articles sans chiffres écartés ; champ `insight` — FAIT (§7.8) |
+| ✅ | **Lecture du TEXTE COMPLET des articles** | `article_fetch.py` (zéro dépendance) + digest map-reduce 8b avant le 70b → capte les chiffres enfouis, quota-safe ; repli résumé RSS ; APRÈS le triage (pas de biais) — FAIT (§4/§5) |
+| ✅ | **Sources de DONNÉES OUVERTES** | `opendata.py` : 4 fournisseurs (Banque mondiale + FRED + Eurostat + INSEE), études chiffrées prêtes, zéro token IA, rotation/jour, dédup ; outil `opendata_check.yml` — FAIT (§5.4) |
+| ✅ | **Barrière QA + AUTO-CORRECTION (breaking)** | Mistral vision juge le post final ; si rejet → refait avec une autre image (≤3 essais) ; trace des essais ratés (`attempts`) + bouton « ⚑ Essais » sur le site — FAIT (§7.6) |
+| ✅ | **Montages PRO (qualité)** | portraits **canoniques** (infobox) only + composition **soudée** (chevauchement, lumière unique) ; modèle `isnet-general-use` configurable — FAIT (§7.6/§7.7) |
+| ✅ | **Dédup multi-sources + juge sémantique** | tokens significatifs + noms propres (hors génériques) + 2e passe FR (breaking) + petit modèle (8b) sur les cas ambigus, token-safe — FAIT (§6) |
+| ✅ | **Créer un post DEPUIS UN TEXTE collé** | bouton « ✍️ Créer » → carrousel **décryptage** (6-8 slides) ; digest token-safe ; ex. transcription YouTube — FAIT (§9.2) |
+| ✅ | **Captions nocturne sur Mistral** | `daily_scan.yml` + Mistral/Gemini → captions hors quota Groq 70b — FAIT (§4) |
+| ✅ | **Bouton « Supprimer » sur le site** | suppression manuelle d'un post (confirmation) — FAIT (§9) |
 | ⏳ | **Logos d'entreprise** | reporté : pas de source gratuite HD (Clearbit mort, favicons 48px). Figure emblématique remplit le rôle. Option = banque de logos payante |
 | ⏳ | **Portraits F1 : rotation complète** | curer 2-3 visages vérifiés par vainqueur récurrent (mécanisme `_PORTRAIT_FILES` déjà en place) + override Stroll/Bearman/Albon. Faible priorité (l'infobox couvre déjà les favoris) |
 | ⏳ | **Publication réseaux** (`poster/`) | X (tweepy), Instagram (Graph API), LinkedIn (Share API) après « Approuver » |
-| ⏳ | **Déduplication par URL exacte** | renfort du dédup sémantique existant |
+| ✅ | **Déduplication par URL + sémantique** | URL exacte + ancres entités/tokens + juge sémantique 8b — FAIT (§6) |
 | ⏳ | **Formats portrait/paysage** | layouts dédiés (story 9:16) en plus du carré |
 
 > **Décisions actées :**
-> - Split 2 modèles + copier-coller transcription = **faits**.
-> - Retraitement transcription : on **reste sur le cron 15 min** + bouton « Run workflow »
->   manuel pour l'instant (pas instantané, ~1-2 min de traitement incompressible). Le
->   déclencheur instantané (Edge Function) est **reporté** à plus tard, quand tout tournera.
-> - Audio/Whisper et publication réseaux = phase 2.
-> - Prochaine priorité : **commit** du bloc + `validate_sources.py` + **premier vrai run**.
+> - Le pipeline tourne en prod : **nocturne = carrousels « études data »** (articles + 4 sources
+>   open data), **breaking = news chaudes** avec barrière QA + auto-correction. Site en ligne.
+> - Transcription YouTube : bloquée sur IP cloud → repli description + **collage manuel** (§9.1)
+>   ou **création depuis un texte collé** (§9.2). Whisper auto = reporté (audio bloqué IP cloud).
+> - Déclencheur instantané (Edge Function) = reporté ; cron 15 min + « Run workflow » suffisent.
+> - **Prochaines priorités** : (1) lancer les **migrations Supabase** (§12.11), (2) **SÉCURITÉ**
+>   (RLS + admin, §12.13), (3) **publication réseaux** (`poster/`).
