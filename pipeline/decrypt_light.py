@@ -347,8 +347,9 @@ def _wpx(fig, text, fp, fs):
     return w
 
 
-def _flow_rich(fig, ax, x, y_top, max_w, words, fp, fs, lh, base=BODY):
-    """Pose des mots (chacun (texte, couleur)) avec retour à la ligne. Renvoie le y du bas."""
+def _flow_rich(fig, ax, x, y_top, max_w, words, fp, fs, lh, base=BODY, draw=True):
+    """Pose des mots (chacun (texte, couleur)) avec retour à la ligne. Renvoie le y du bas.
+    draw=False → mesure seulement (pour dimensionner un cadre avant de dessiner)."""
     space = _wpx(fig, " ", fp, fs)
     cx, y = x, y_top
     first = True
@@ -358,8 +359,9 @@ def _flow_rich(fig, ax, x, y_top, max_w, words, fp, fs, lh, base=BODY):
             cx = x
             y += lh
             first = True
-        ax.text(cx, _Y(y), word, ha="left", va="top", color=col or base,
-                fontproperties=fp, fontsize=fs, zorder=5)
+        if draw:
+            ax.text(cx, _Y(y), word, ha="left", va="top", color=col or base,
+                    fontproperties=fp, fontsize=fs, zorder=5)
         cx += ww + space
         first = False
     return y + lh        # bas de la dernière ligne (en "depuis le haut")
@@ -384,9 +386,14 @@ def _rich_words(texte, fort):
 def _two_tone_title(fig, ax, l1, l2, y_top, fs=78, x=MARGIN, max_w=CW):
     F = fig._F
     fp = F["body_xb"]
+    l1 = (l1 or "").strip().upper()
+    l2 = (l2 or "").strip().upper()
+    # AUTO-FIT anti-coupure : réduit fs jusqu'à ce que CHAQUE ligne complète tienne sur une
+    # ligne (ex. « INVESTISSEMENT ? » ne déborde plus et ne casse plus le « ? »).
+    while fs > 30 and (_wpx(fig, l1, fp, fs) > max_w or _wpx(fig, l2, fp, fs) > max_w):
+        fs -= 3
 
     def _wrap(s):
-        s = (s or "").strip().upper()
         if not s:
             return []
         out, cur = [], ""
@@ -509,19 +516,28 @@ def _slide_takeaway(fig, ax, data):
     ax.plot([MARGIN, MARGIN + 120], [_Y(290), _Y(290)], color=GOLD, lw=4, zorder=5)
 
     insight = (data.get("insight") or "").strip()
-    # encadré callout
-    ax.add_patch(FancyBboxPatch((MARGIN, _Y(720)), CW, 380,
+    words = _rich_words(insight, data.get("insight_fort"))
+    # Police adaptée à la longueur (anti-coupure), puis cadre DIMENSIONNÉ au texte mesuré.
+    fs = 32 if len(insight) <= 150 else (28 if len(insight) <= 240 else 24)
+    lh = fs * 1.42
+    text_x, text_w = MARGIN + 160, CW - 200
+    box_top, text_top = 360, 412
+    bottom = _flow_rich(fig, ax, text_x, text_top, text_w, words, F["body_md"], fs, lh,
+                        base=NAVY, draw=False)
+    box_h = (bottom - box_top) + 46
+    ax.add_patch(FancyBboxPatch((MARGIN, _Y(box_top + box_h)), CW, box_h,
                  boxstyle="round,pad=0,rounding_size=24", facecolor="#FFFFFF",
                  edgecolor=GOLD, lw=2, zorder=3, alpha=0.6))
-    _draw_icon(ax, "bouclier", "", "", MARGIN + 70, _Y(420), R=46)
-    words = _rich_words(insight, data.get("insight_fort"))
-    _flow_rich(fig, ax, MARGIN + 160, 392, CW - 200, words, F["body_md"], 30, 42, base=NAVY)
+    _draw_icon(ax, "bouclier", "", "", MARGIN + 74, _Y(text_top + 18), R=46)
+    _flow_rich(fig, ax, text_x, text_top, text_w, words, F["body_md"], fs, lh, base=NAVY)
 
+    foot_y = box_top + box_h + 70
     src = (data.get("source") or "").strip()
     if src:
-        ax.text(MARGIN, _Y(800), f"Source : {src}", ha="left", va="top", color=NAVY_SOFT,
+        ax.text(MARGIN, _Y(foot_y), f"Source : {src}", ha="left", va="top", color=NAVY_SOFT,
                 fontproperties=F["body_sb"], fontsize=16, zorder=5)
-    ax.text(MARGIN, _Y(860), "SUIVEZ @HK.MÉDIA POUR VOS DÉCRYPTAGES", ha="left", va="top",
+        foot_y += 44
+    ax.text(MARGIN, _Y(foot_y), "SUIVEZ @HK.MÉDIA POUR VOS DÉCRYPTAGES", ha="left", va="top",
             color=GOLD_DK, fontproperties=F["body_sb"], fontsize=15, zorder=5)
     _footer(fig, ax, data.get("source", ""))
 
@@ -565,6 +581,46 @@ def _fetch_photo(query):
         return None
 
 
+# ── Brève (sujet sans assez de matière : photo + titre fort) ─────────────────
+def _slide_breve(fig, ax, data, photo_img=None):
+    F = fig._F
+    ax.text(MARGIN, _Y(140), "À SUIVRE", ha="left", va="top", color=GOLD_DK,
+            fontproperties=F["body_sb"], fontsize=22, zorder=5)
+    ax.plot([MARGIN, MARGIN + 200], [_Y(186), _Y(186)], color=GOLD, lw=3, zorder=5)
+
+    yb = _two_tone_title(fig, ax, data.get("titre", ""), data.get("titre2", ""),
+                         y_top=240, fs=86)
+    phrase = (data.get("phrase") or "").strip()
+    yb2 = yb + 30
+    if phrase:
+        yb2 = _flow_rich(fig, ax, MARGIN, yb + 34, CW, _rich_words(phrase, data.get("fort")),
+                         F["body_md"], 30, 42, base=BODY)
+
+    band_top = max(yb2 + 50, 620)
+    band_h = 1180 - band_top
+    if photo_img is not None and band_h > 200:
+        _photo_band(ax, photo_img, band_top, band_h)
+    else:                                          # pas de photo → gros pictogramme contextuel
+        ic = (data.get("cover_icons") or [None])[0]
+        _draw_icon(ax, ic, data.get("titre", ""), data.get("phrase", ""),
+                   W / 2, _Y(band_top + band_h / 2), R=120)
+    _footer(fig, ax, data.get("source", ""))
+
+
+def render_breve(data: dict) -> list[bytes]:
+    """Brève : UNE slide (titre fort + 1 phrase + photo) pour un sujet trop mince pour un
+    décryptage. data = {titre, titre2, phrase, fort, photo, source, cover_icons}."""
+    img = _fetch_photo(data.get("photo")) if data.get("photo") else None
+    fig, ax = _fig()
+    try:
+        _slide_breve(fig, ax, data, img)
+        return [_finish(fig)]
+    except Exception as e:
+        print(f"[DECRYPT] brève KO ({type(e).__name__}: {e})")
+        plt.close(fig)
+        return []
+
+
 # ── Point d'entrée ───────────────────────────────────────────────────────────
 def render_decryptage(data: dict) -> list[bytes]:
     """data = {titre, titre2, intro, source, insight, slides:[{titre,titre2,photo,points:
@@ -595,12 +651,13 @@ def render_decryptage(data: dict) -> list[bytes]:
 
 if __name__ == "__main__":
     sample = {
-        "titre": "LE BITCOIN", "titre2": "KÉZACO ?",
-        "intro": "Tout comprendre en moins d'une minute : techno, promesse, limites.",
-        "source": "HK Média", "cover_icons": ["reseau", "cadenas", "piece"],
-        "insight": "Le Bitcoin n'est pas un actif refuge mais une assurance contre le "
-                   "débasement monétaire — à intégrer avec mesure dans un portefeuille.",
-        "insight_fort": "assurance contre le débasement monétaire",
+        "titre": "BITCOIN", "titre2": "INVESTISSEMENT ?",
+        "intro": "Le Bitcoin, un bon investissement pour les 20 prochaines années ?",
+        "source": "The Big Whale", "cover_icons": ["reseau", "cadenas", "piece"],
+        "insight": "Le Bitcoin est un investissement à long terme qui présente des risques "
+                   "comme des opportunités : comprendre les enjeux et les menaces qui pèsent "
+                   "est indispensable avant d'y consacrer une part de son épargne.",
+        "insight_fort": "investissement à long terme",
         "slides": [
             {"titre": "LE BITCOIN", "titre2": "KÉZACO ?", "points": [
                 {"label": "Technologie", "texte": "Blockchain décentralisée, sécurisée par le mécanisme de Proof-of-Work.", "icon": "reseau", "fort": "Proof-of-Work"},
@@ -626,3 +683,13 @@ if __name__ == "__main__":
             f.write(png)
         print(f"Slide {i} : {len(png) // 1024} KB")
     print(f"{len(slides)} slides generes.")
+
+    # Brève (sujet mince → photo + titre)
+    breve = {"titre": "YANN LE CUN", "titre2": "QUITTE META",
+             "phrase": "Le pionnier de l'IA lance sa propre entreprise de modèles de fondation européens.",
+             "fort": "modèles de fondation européens", "photo": "",
+             "cover_icons": ["ampoule"], "source": "Les Échos"}
+    for i, png in enumerate(render_breve(breve), 1):
+        with open(f"test_breve_{i}.png", "wb") as f:
+            f.write(png)
+    print("Brève générée.")

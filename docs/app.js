@@ -365,13 +365,14 @@ function openCreate() {
   const cats = ["general", "finance", "tech", "ia", "crypto", "quantique", "sport", "factcheck"];
   document.getElementById("modal-content").innerHTML = `
     <h3 style="font-size:16px;font-weight:800;margin-bottom:6px">✍️ Créer un post depuis un texte</h3>
-    <p style="font-size:12px;color:var(--text-dim);margin-bottom:14px">Colle une transcription YouTube, un article, des notes… L'IA fait le tri pertinent et génère un <b>carrousel décryptage</b> (6-8 slides). Économe en tokens.</p>
+    <p style="font-size:12px;color:var(--text-dim);margin-bottom:14px">Colle une transcription YouTube, un article, des notes… L'IA <b>découpe par sujet</b> : un décryptage clair par sujet riche, une brève (photo + titre) pour les sujets minces. <b>1 post = 1 sujet.</b> Économe en tokens.</p>
+    <input id="cr-source" class="cr-input" placeholder="Source (ex : The Big Whale, Les Échos, nom de la vidéo…)" />
     <input id="cr-title" class="cr-input" placeholder="Titre (optionnel — l'IA en proposera un)" />
     <select id="cr-cat" class="cr-input">
       ${cats.map(c => `<option value="${c}">${c}</option>`).join("")}
     </select>
     <textarea id="cr-text" class="cr-text" placeholder="Colle ton texte ici (transcription, article…)"></textarea>
-    <button class="btn-generate" onclick="submitCreate(this)">⚙️ Générer le carrousel</button>`;
+    <button class="btn-generate" onclick="submitCreate(this)">⚙️ Générer les posts</button>`;
   document.getElementById("modal").style.display = "flex";
 }
 
@@ -379,6 +380,7 @@ async function submitCreate(btn) {
   const text = (document.getElementById("cr-text").value || "").trim();
   if (text.length < 200) { alert("Colle un texte plus long (au moins quelques paragraphes)."); return; }
   const title = (document.getElementById("cr-title").value || "").trim();
+  const source = (document.getElementById("cr-source").value || "").trim();
   const cat = document.getElementById("cr-cat").value || "general";
   btn.disabled = true; btn.textContent = "Envoi…";
   try {
@@ -389,11 +391,11 @@ async function submitCreate(btn) {
       pending_transcript: text,
       article_title: title || "Décryptage en préparation…",
       category: cat,
-      source: "Texte collé",
+      source: source || "Texte collé",
       chart_type: "decryptage",
     });
     closeModal();
-    alert("✅ Envoyé ! Le carrousel se génère (≤ 15 min, ou « Run workflow » → Retraitement sur GitHub). Il apparaîtra ici en « En attente ».");
+    alert("✅ Envoyé ! Les posts se génèrent (≤ 15 min, ou « Run workflow » → Retraitement sur GitHub). Ils apparaîtront ici en « En attente ».");
   } catch (err) {
     btn.disabled = false; btn.textContent = "⚙️ Générer le carrousel";
     alert("Erreur : " + err.message);

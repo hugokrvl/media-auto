@@ -352,6 +352,142 @@ def enrich_decryptage(article: dict) -> dict:
     return article
 
 
+def _clean_slides(raw_slides) -> list[dict]:
+    """Nettoie/borne une liste de slides {titre,titre2,photo,points[{label,texte,icon,fort}]}."""
+    slides = []
+    for s in (raw_slides or [])[:5]:
+        if not isinstance(s, dict):
+            continue
+        pts = []
+        for p in (s.get("points") or [])[:5]:
+            if not isinstance(p, dict):
+                continue
+            txt = (p.get("texte") or p.get("text") or "").strip()
+            if not (p.get("label") or txt):
+                continue
+            pts.append({"label": (p.get("label") or "").strip()[:34], "texte": txt[:110],
+                        "icon": (p.get("icon") or "").strip().lower(),
+                        "fort": (p.get("fort") or "").strip()[:60]})
+        if pts:
+            slides.append({"titre": (s.get("titre") or "").strip()[:18],
+                           "titre2": (s.get("titre2") or "").strip()[:20],
+                           "photo": (s.get("photo") or "").strip()[:60], "points": pts})
+    return slides
+
+
+SPLIT_SYS = ("Tu es chef d'édition. Le texte reçu peut couvrir PLUSIEURS sujets sans rapport. "
+             "Tu le découpes en POSTS DISTINCTS : 1 SUJET = 1 POST (jamais deux sujets mélangés). "
+             "Un sujet RICHE (≥4 faits) → décryptage ; un sujet MINCE (1-2 faits) → brève "
+             "(titre + 1 phrase + photo). EN FRANÇAIS, FACTUEL, tu n'inventes RIEN. JSON valide.")
+
+SPLIT_PROMPT = """Découpe ce contenu en 1 à 4 POSTS, UN PAR SUJET distinct.
+JSON EXACTEMENT :
+{
+  "posts": [
+    {
+      "format": "decryptage",
+      "titre": "<MAJUSCULES, ≤14 car.>", "titre2": "<MAJUSCULES, ≤16 car.>",
+      "intro": "<accroche EN FRANÇAIS, ≤90 car.>",
+      "slides": [
+        {"titre": "<MAJ ≤14>", "titre2": "<MAJ ≤16>", "photo": "<requête photo EN si utile sinon ''>",
+         "points": [{"label": "<2-4 mots>", "texte": "<fait ≤95 car.>",
+                     "icon": "<UNE icône parmi: __ICONS__>", "fort": "<extrait EXACT de texte ou ''>"}]}
+      ],
+      "insight": "<conclusion ≤150 car.>", "insight_fort": "<extrait de insight ou ''>"
+    },
+    {
+      "format": "breve",
+      "titre": "<MAJ ≤14>", "titre2": "<MAJ ≤16>",
+      "phrase": "<le fait en 1 phrase EN FRANÇAIS, ≤140 car.>", "fort": "<extrait de phrase ou ''>",
+      "photo": "<requête photo EN (ex: 'yann lecun portrait')>"
+    }
+  ]
+}
+RÈGLES : 1 SUJET = 1 POST. 1 à 4 posts. Décryptage = 3-4 slides, 3-5 points/slide, "icon"
+OBLIGATOIRE (liste), "fort" = extrait EXACT. Brève quand peu de matière (1 actu ponctuelle).
+Garde les chiffres. Titres COURTS et percutants. N'invente RIEN.
+
+Contenu :
+__BODY__"""
+
+
+def split_into_posts(article: dict) -> list[dict]:
+    """Texte collé (pouvant couvrir plusieurs sujets) → LISTE de posts distincts (1 sujet =
+    1 post). Chaque post : format 'decryptage' (decrypt_data) ou 'breve' (breve_data).
+    Digest (8b) token-safe → 1 appel de structuration (70b). Repli sur un décryptage unique."""
+    text = (article.get("pending_transcript") or article.get("transcript")
+            or article.get("summary") or "").strip()
+    if not text:
+        return []
+    body = (_digest_text(article.get("title", ""), text, max_chunks=8, cap=6000)
+            if len(text) > 4000 else text)
+    prompt = SPLIT_PROMPT.replace("__ICONS__", DECRYPT_ICONS).replace("__BODY__", (body or text)[:6000])
+    try:
+        e = _chat(GENERATION_MODEL, SPLIT_SYS, prompt, max_tokens=3000)
+    except Exception as ex:
+        print(f"[ANALYZER] Découpe KO: {type(ex).__name__}: {ex}")
+        e = {}
+
+    src = (article.get("source") or "").strip()
+    cat = article.get("category") or "general"
+    out = []
+    for po in (e.get("posts") or [])[:4]:
+        if not isinstance(po, dict):
+            continue
+        fmt = (po.get("format") or "decryptage").strip().lower()
+        titre = (po.get("titre") or "").strip()[:18]
+        titre2 = (po.get("titre2") or "").strip()[:20]
+        title_fr = (f"{titre} {titre2}".strip() or "Sujet")[:90]
+
+        if fmt == "breve":
+            phrase = (po.get("phrase") or "").strip()[:160]
+            if not (titre or phrase):
+                continue
+            out.append({
+                "format": "breve",
+                "breve_data": {"titre": titre or title_fr.upper()[:18], "titre2": titre2,
+                               "phrase": phrase, "fort": (po.get("fort") or "").strip()[:60],
+                               "photo": (po.get("photo") or "").strip()[:60], "source": src},
+                "title_fr": title_fr, "source": src, "category": cat,
+                "chart_type": "breve", "insight": phrase, "key_points": [phrase],
+            })
+        else:
+            slides = _clean_slides(po.get("slides"))
+            if not slides:
+                continue
+            if not titre:
+                titre, titre2 = slides[0]["titre"], slides[0]["titre2"]
+                title_fr = (f"{titre} {titre2}".strip() or "Décryptage")[:90]
+            out.append({
+                "format": "decryptage",
+                "decrypt_data": {"titre": titre or title_fr.upper()[:18], "titre2": titre2,
+                                 "intro": (po.get("intro") or "").strip()[:100],
+                                 "insight": (po.get("insight") or "").strip()[:160],
+                                 "insight_fort": (po.get("insight_fort") or "").strip()[:60],
+                                 "cover_icons": [p["icon"] for s in slides for p in s["points"]
+                                                 if p["icon"]][:3] or ["reseau", "cadenas", "piece"],
+                                 "slides": slides, "source": src},
+                "title_fr": title_fr, "source": src, "category": cat, "chart_type": "decryptage",
+                "insight": (po.get("insight") or "").strip()[:170],
+                "key_points": [p["texte"] for s in slides for p in s["points"]][:6],
+            })
+
+    # Repli : si la découpe n'a rien donné, on retombe sur UN décryptage (comportement d'avant).
+    if not out:
+        art2 = dict(article)
+        enrich_decryptage(art2)
+        if art2.get("decrypt_data"):
+            out.append({"format": "decryptage", "decrypt_data": art2["decrypt_data"],
+                        "title_fr": art2.get("title_fr") or "Décryptage", "source": src,
+                        "category": cat, "chart_type": "decryptage",
+                        "insight": art2.get("insight", ""),
+                        "key_points": art2.get("key_points", [])})
+    print(f"[ANALYZER] Découpe → {len(out)} post(s) "
+          f"({sum(p['format']=='decryptage' for p in out)} décryptage / "
+          f"{sum(p['format']=='breve' for p in out)} brève)")
+    return out
+
+
 def analyze_articles(articles: list[dict], max_to_analyze: int = None) -> list[dict]:
     """Triage (8b) sur tous, puis enrichissement (70b) sur les meilleurs retenus."""
     limit = max_to_analyze or MAX_ANALYZE

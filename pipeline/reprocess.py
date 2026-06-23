@@ -81,9 +81,46 @@ def run():
             pass
 
 
+def _materialize_post(pd: dict, base: dict, existing_id: str = None) -> None:
+    """Rend UN post (décryptage ou brève) → upload slides + captions → Supabase.
+    existing_id : met à jour la ligne d'origine (1er post) ; sinon insère un NOUVEAU post."""
+    import decrypt_light
+    article = {
+        "title": pd.get("title_fr") or "Post",
+        "title_fr": pd.get("title_fr") or "Post",
+        "url": base.get("url", ""),
+        "source": pd.get("source") or base.get("source", ""),
+        "category": pd.get("category") or base.get("category", "general"),
+        "score": 8, "verified": True,
+        "chart_type": pd.get("chart_type", "decryptage"),
+        "insight": pd.get("insight", ""),
+        "key_points": pd.get("key_points", []),
+        "decrypt_data": pd.get("decrypt_data"),
+    }
+    slug = _slugify(article["title"])
+    if pd.get("format") == "breve":
+        imgs = decrypt_light.render_breve(pd["breve_data"])
+        kind = "breve"
+    else:
+        imgs = carousel.generate_decryptage(article)
+        kind = "decr"
+    slide_urls = [storage.upload_image(png, f"{slug}_{kind}{n + 1}.png")
+                  for n, png in enumerate(imgs)]
+    cover = slide_urls[0] if slide_urls else None
+    image_urls = {net: cover for net in ("instagram", "twitter", "linkedin")}
+    captions = generator.generate_captions(article)
+    if existing_id:
+        storage.update_post_content(existing_id, article, captions, image_urls,
+                                    status="pending", slides=slide_urls)
+    else:
+        storage.save_post(article, captions, image_urls, slides=slide_urls)
+    print(f"[GENERATE] ✓ {pd.get('format')} {len(slide_urls)} slide(s) : {article['title'][:50]}")
+
+
 def run_generate():
-    """Crée des posts DÉCRYPTAGE depuis un texte collé sur le site (status='to_generate').
-    Digest token-safe (8b) → structuration en sections (70b) → carrousel → 'pending'."""
+    """Crée des posts depuis un texte collé (status='to_generate'). DÉCOUPE PAR SUJET :
+    1 sujet = 1 post (décryptage clair si assez de matière, sinon brève photo+titre).
+    Digest token-safe (8b) → découpe/structuration (70b) → carrousels/brèves → 'pending'."""
     posts = storage.get_posts_to_generate()
     if not posts:
         print("[GENERATE] Aucun texte collé à transformer.")
@@ -91,36 +128,35 @@ def run_generate():
     print(f"[GENERATE] {len(posts)} texte(s) collé(s) à transformer")
     done = errors = 0
     for post in posts:
+        rid = post.get("id", "")
         try:
-            article = {
+            base = {
                 "title": post.get("article_title") or "Décryptage",
                 "url": post.get("article_url", ""),
                 "source": post.get("source") or "Texte collé",
                 "category": post.get("category") or "general",
-                "score": 8, "verified": True,
                 "pending_transcript": post.get("pending_transcript", ""),
             }
-            analyzer.enrich_decryptage(article)
-            article["title"] = article.get("title_fr") or article["title"]  # titre affiché = title_fr
-            slides = carousel.generate_decryptage(article)
-            slug = _slugify(article["title"])
-            slide_urls = [storage.upload_image(png, f"{slug}_decr{n + 1}.png")
-                          for n, png in enumerate(slides)]
-            cover = slide_urls[0]
-            image_urls = {net: cover for net in ("instagram", "twitter", "linkedin")}
-            captions = generator.generate_captions(article)
-            storage.update_post_content(post["id"], article, captions, image_urls,
-                                        status="pending", slides=slide_urls)
-            done += 1
-            print(f"[GENERATE] ✓ Décryptage {len(slide_urls)} slides : {article['title'][:50]}")
+            subposts = analyzer.split_into_posts(base)
+            if not subposts:
+                errors += 1
+                print(f"[GENERATE] ⊘ Rien d'exploitable : {rid}")
+                continue
+            for i, pd in enumerate(subposts):
+                try:
+                    _materialize_post(pd, base, existing_id=(rid if i == 0 else None))
+                    done += 1
+                except Exception as e:
+                    errors += 1
+                    print(f"[GENERATE] ✗ rendu post {i} ({rid}): {type(e).__name__}: {e}")
         except Exception as e:
             errors += 1
-            print(f"[GENERATE] ✗ {type(e).__name__} sur '{post.get('id','')}': {e}")
-    print(f"=== Décryptages terminés : {done} créé(s) / {errors} erreur(s) ===")
+            print(f"[GENERATE] ✗ {type(e).__name__} sur '{rid}': {e}")
+    print(f"=== Génération terminée : {done} post(s) créé(s) / {errors} erreur(s) ===")
     if done:
         try:
             from notifier import notify
-            notify("Décryptage prêt ✓", f"{done} carrousel(s) généré(s) depuis ton texte, à valider.")
+            notify("Posts prêts ✓", f"{done} post(s) généré(s) depuis ton texte (1 sujet = 1 post), à valider.")
         except Exception:
             pass
     return done

@@ -925,9 +925,16 @@ Flux complet :
 
 ### 9.2 Créer un post DEPUIS UN TEXTE collé — DÉCRYPTAGE thème CLAIR (`decrypt_light.py`)
 
-Bouton **« ✍️ Créer »** (header du site) → fenêtre où l'on **colle un texte** (transcription
-YouTube, article, notes) → génère un **carrousel DÉCRYPTAGE** au **thème CLAIR éditorial**
+Bouton **« ✍️ Créer »** (header du site) → fenêtre avec **source** (à préciser) + titre/catégorie
+optionnels + **zone de texte collé** (transcription YouTube, article, notes). Le texte est
+**DÉCOUPÉ PAR SUJET** : **1 sujet = 1 post**. Chaque post est rendu au **thème CLAIR éditorial**
 (≠ le reste du média qui reste sombre — préférence utilisateur explicite).
+
+**Découpe intelligente** (`analyzer.split_into_posts`) : l'IA segmente le texte en 1 à 4 sujets
+distincts (jamais deux sujets dans un même post) et choisit le format selon la matière :
+- sujet **RICHE** (≥4 faits) → **DÉCRYPTAGE** (carrousel couverture→sections→à retenir) ;
+- sujet **MINCE** (1-2 faits) → **BRÈVE** : 1 slide « À SUIVRE » (titre fort + 1 phrase + photo,
+  `decrypt_light.render_breve`). Ex. « Yann Le Cun quitte Meta » = une brève, pas un décryptage.
 
 **Style clair** (`pipeline/decrypt_light.py`, inspiré des décryptages Instagram « propres ») :
 fond **papier crème**, palette **navy + or**, **titres ALL-CAPS bicolores** (1 ligne bleu / 1
@@ -941,22 +948,25 @@ points icône/label/texte) → **à retenir** (callout `insight` surligné).
 
 Flux (réutilise l'infra transcription) :
 ```
-1. Site : insert d'un post status='to_generate' + pending_transcript=<texte> (clé anon).
+1. Site : insert d'un post status='to_generate' + pending_transcript=<texte> + source (clé anon).
 2. reprocess.yml (15 min ou manuel) → reprocess.run_generate() :
-     analyzer.enrich_decryptage() : DIGEST token-safe (8b) → structuration (70b) en
-       `decrypt_data` {titre, titre2, intro, slides:[{titre,titre2,photo,
-        points:[{label,texte,icon,fort}]}], insight, insight_fort}
-     → carousel.generate_decryptage() → decrypt_light.render_decryptage() (slides)
-     → update_post_content(status='pending', slides)
-3. Le post arrive en 'pending' (carrousel clair), prêt à approuver. Notif ntfy.
+     analyzer.split_into_posts() : DIGEST token-safe (8b) → DÉCOUPE/structuration (70b) en
+       LISTE de posts {format:'decryptage'|'breve', decrypt_data|breve_data, source, ...}
+     pour chaque post → carousel.generate_decryptage() (→ decrypt_light.render_decryptage)
+                        OU decrypt_light.render_breve() → upload slides + captions
+     1er post → update_post_content (ligne d'origine) ; suivants → save_post (NOUVEAUX posts)
+3. Les posts arrivent en 'pending' (1 par sujet), prêts à approuver. Notif ntfy.
 ```
 - **Token-safe** : un long texte (transcription 1h) est digéré par le 8b (gros quota) avant le
-  70b → « tri pertinent et divisé », conso minimale (le 70b ne voit que ~5000 car. de condensé).
+  70b → « tri pertinent et divisé » ; **un seul** appel 70b produit tous les posts (cap 4).
+- **Anti-coupure** : titres en auto-fit (réduit la police jusqu'à tenir sur une ligne) ; le
+  callout « à retenir » est dimensionné au texte mesuré (`_flow_rich(draw=False)`).
 - L'IA choisit l'`icon` (parmi la liste) et le `fort` (extrait EXACT de `texte`) par point ;
   repli mot-clé puis pastille si l'icône est absente/inconnue (`decrypt_light._icon_for`).
-- **Dégradations** : pas de clé Unsplash → slides sans bandeau (rendu propre quand même) ;
-  renderer KO → repli sur l'infographie simple. Le site statique met en **file** ; le workflow agit.
-- Test rendu : `python decrypt_light.py` (→ `test_decrypt_*.png`).
+- **Dégradations** : pas de clé Unsplash → slides/brèves sans photo (rendu propre quand même,
+  brève = gros pictogramme) ; découpe vide → repli sur UN décryptage (`enrich_decryptage`) ;
+  renderer KO → repli infographie. Le site statique met en **file** ; le workflow agit.
+- Test rendu : `python decrypt_light.py` (→ `test_decrypt_*.png`, `test_breve_*.png`).
 
 ---
 
