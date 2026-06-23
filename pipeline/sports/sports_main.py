@@ -61,8 +61,8 @@ def _save_scores_post(league_name: str, img_bytes: bytes, sport_date: str,
         "image_instagram": image_url,
         "image_twitter": image_url,
         "image_linkedin": image_url,
-        "caption_instagram": f"📊 Résultats {league_name} du {sport_date} #sport #{league_name.replace(' ','')}",
-        "caption_twitter": f"📊 Résultats {league_name} · {sport_date}",
+        "caption_instagram": f"Résultats {league_name} du {sport_date}. #sport #{league_name.replace(' ','')}",
+        "caption_twitter": f"Résultats {league_name} · {sport_date}",
         "caption_linkedin": f"Résultats {league_name} du {sport_date}",
     }).execute()
     print(f"[SPORT] Post créé : {league_name} · {sport_date}")

@@ -106,8 +106,8 @@ def _save_post(img_bytes: bytes) -> None:
         "image_instagram": image_url,
         "image_twitter": image_url,
         "image_linkedin": image_url,
-        "caption_instagram": f"📊 Clôture des marchés du {TODAY} #bourse #marchés #finance",
-        "caption_twitter": f"📊 Clôture des marchés · {TODAY}",
+        "caption_instagram": f"Clôture des marchés du {TODAY}. #bourse #marchés #finance",
+        "caption_twitter": f"Clôture des marchés · {TODAY}",
         "caption_linkedin": f"Clôture des marchés du {TODAY}",
     }).execute()
     print(f"[MARKETS] Post créé : Clôture des marchés · {TODAY}")

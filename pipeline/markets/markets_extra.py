@@ -203,8 +203,8 @@ def _save(kind: str, img: bytes, caption_tag: str) -> None:
         "category": "finance", "chart_type": kind, "relevance_score": 7,
         "verified": True, "status": "pending",
         "image_instagram": image_url, "image_twitter": image_url, "image_linkedin": image_url,
-        "caption_instagram": f"📊 {_TITLES[kind]} — {TODAY} {caption_tag}",
-        "caption_twitter": f"📊 {_TITLES[kind]} · {TODAY}",
+        "caption_instagram": f"{_TITLES[kind]} — {TODAY} {caption_tag}",
+        "caption_twitter": f"{_TITLES[kind]} · {TODAY}",
         "caption_linkedin": f"{_TITLES[kind]} du {TODAY}",
     }).execute()
     print(f"[MARKETS+] Post créé : {title}")
