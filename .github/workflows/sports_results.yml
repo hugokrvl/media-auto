@@ -1,12 +1,13 @@
 name: MediaAuto — Résultats Sportifs
 
 on:
-  schedule:
-    # Toutes les 30 min de 17h00 à 02h00 UTC (19h-04h Paris été)
-    # Couvre les matchs de l'après-midi jusqu'aux derniers matchs NBA
-    - cron: "0,30 17-23 * * *"
-    - cron: "0,30 0-2 * * *"
-  workflow_dispatch:   # déclenchement manuel depuis GitHub Actions
+  # ⚠️ Cron DÉSACTIVÉ (demande utilisateur) : résultats sportifs en MANUEL UNIQUEMENT.
+  # Pour réactiver l'automatique, décommenter le bloc schedule ci-dessous.
+  # schedule:
+  #   # Toutes les 30 min de 17h00 à 02h00 UTC (19h-04h Paris été)
+  #   - cron: "0,30 17-23 * * *"
+  #   - cron: "0,30 0-2 * * *"
+  workflow_dispatch:   # déclenchement MANUEL depuis GitHub Actions
 
 jobs:
   sports:
