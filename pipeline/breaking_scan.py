@@ -47,7 +47,8 @@ def fetch_candidates() -> list[dict]:
     from sources import SOURCES
     cutoff = datetime.now(timezone.utc) - timedelta(minutes=RECENT_MIN)
     cutoff_ts = cutoff.timestamp()
-    out, seen = [], set()
+    window24 = (datetime.now(timezone.utc) - timedelta(hours=24)).timestamp()
+    out, seen, activity = [], set(), {}
     for s in SOURCES:
         if s.get("type", "rss") != "rss" or s.get("category") not in VERTICALS:
             continue
@@ -57,6 +58,16 @@ def fetch_candidates() -> list[dict]:
             feed = feedparser.parse(s["url"])
         except Exception:
             continue
+        # ACTIVITÉ de la source = nb d'articles publiés sur les dernières 24 h (proxy de
+        # fréquence). Sert à pousser les sources PEU actives (sans bloquer les prolifiques).
+        act = dated = 0
+        for e in feed.entries:
+            pub = e.get("published_parsed") or e.get("updated_parsed")
+            if pub:
+                dated += 1
+                if timegm(pub) >= window24:
+                    act += 1
+        activity[s["name"]] = act if dated else None   # None = dates absentes → neutre
         for e in feed.entries[:20]:
             pub = e.get("published_parsed") or e.get("updated_parsed")
             if pub and timegm(pub) < cutoff_ts:
@@ -69,7 +80,13 @@ def fetch_candidates() -> list[dict]:
             summary = (e.get("summary") or "")[:400]
             out.append({"title": title, "title_fr": title, "url": link,
                         "source": s["name"], "category": s["category"],
-                        "summary": summary})
+                        "summary": summary, "_activity": activity[s["name"]]})
+    # Classement des sources ayant des candidats, de la plus RARE à la plus active (log).
+    srcs = sorted({a["source"] for a in out},
+                  key=lambda n: (activity.get(n) if activity.get(n) is not None else 9999))
+    if srcs:
+        print("[SCAN] activité/24h (rare→active) : "
+              + " · ".join(f"{n}={activity.get(n)}" for n in srcs))
     return out
 
 
@@ -97,6 +114,23 @@ def dedupe(cands: list[dict]) -> list[dict]:
 
 # ── 3. Jugement IA en lot ──────────────────────────────────────────────────────
 
+def _rarity_bonus(activity) -> float:
+    """Bonus de sélection inversement proportionnel à l'activité 24h de la source : pousse
+    les sources PEU prolifiques (≈1/jour) SANS pénaliser ni bloquer les très actives.
+    activity = nb d'articles publiés sur 24h (None = inconnu → neutre)."""
+    if activity is None:
+        return 0.0
+    if activity <= 1:                 # ~1/jour ou moins → rare, fort coup de pouce
+        return 2.0
+    if activity <= 3:
+        return 1.5
+    if activity <= 8:
+        return 1.0
+    if activity <= 20:
+        return 0.5
+    return 0.0                        # flux prolifique → pas de bonus (mais jamais bloqué)
+
+
 _JUDGE_SYS = ("Tu es rédacteur en chef d'un média ÉCONOMIE / TECH / IA / BLOCKCHAIN / "
               "QUANTIQUE, rigoureux et orienté vérité. Tu réponds UNIQUEMENT en JSON valide.")
 
@@ -122,13 +156,24 @@ def judge(cands: list[dict]) -> list[dict]:
             i = int(it["i"])
         except Exception:
             continue
-        if 0 <= i < len(cands) and it.get("breaking") and int(it.get("score", 0)) >= SCORE_MIN:
-            a = cands[i]
-            a["score"] = int(it.get("score", 0))
-            a["category"] = it.get("category", a["category"])
-            a["verified"] = True
-            kept.append(a)
-    kept.sort(key=lambda x: -x["score"])
+        if not (0 <= i < len(cands) and it.get("breaking")):
+            continue
+        a = cands[i]
+        sc = int(it.get("score", 0))
+        eff = sc + _rarity_bonus(a.get("_activity"))   # bonus aux sources rares
+        if eff < SCORE_MIN:                            # seuil sur le score EFFECTIF
+            continue
+        a["score"] = sc                                # on garde le VRAI score juge (non gonflé)
+        a["_effscore"] = eff
+        a["category"] = it.get("category", a["category"])
+        a["verified"] = True
+        kept.append(a)
+    # Tri par score EFFECTIF → à mérite ~égal, la source rare passe devant la prolifique.
+    kept.sort(key=lambda x: -x.get("_effscore", x["score"]))
+    if kept:
+        print("[SCAN] sélection : " + " · ".join(
+            f'{a["source"]} (juge {a["score"]} +{a["_effscore"] - a["score"]:.1f})'
+            for a in kept[:MAX_PER_SCAN]))
     return kept[:MAX_PER_SCAN]
 
 

@@ -707,6 +707,13 @@ Pipeline rapide :
 3. **Jugement IA EN LOT** (`judge`, 1 seul appel `llm`) : ne garde que `breaking==true`
    & `score ≥ BREAKING_SCORE_MIN` (7), cap `BREAKING_MAX_PER_SCAN` (2). Sécurité : si
    aucun fournisseur IA qualité (Mistral/Gemini), le scan s'abstient (rien posté).
+   **Bonus rareté de source** (`_rarity_bonus`) : chaque source est notée par son **activité
+   sur 24 h** (nb d'articles publiés, calculée dans `fetch_candidates`). Au moment de la
+   sélection, on ajoute un **bonus inversement proportionnel** à cette activité (≈1/jour → +2,
+   prolifique → 0) au **score effectif** (seuil + tri), **sans jamais bloquer** une source
+   active. Effet : les sources peu prolifiques (OpenAI, DeepMind…) **remontent** au lieu d'être
+   noyées par les flux crypto/tech qui publient en continu. Le **vrai** score juge est conservé
+   (non gonflé) ; le bonus ne sert qu'au classement. Logs : « activité/24h » + « sélection ».
 4. **Enrichissement** (`enrich`) : titre FR percutant qui **colle au sujet** + `people`.
    **Règle figure STRICTE** (anti mauvais visage) : une personne seulement si elle est nommée
    OU le dirigeant emblématique de **L'ENTREPRISE précise** du sujet (OpenAI→Altman, Palantir→Karp…).
