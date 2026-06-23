@@ -197,6 +197,66 @@ def classify(article: dict, history: list[dict]) -> tuple[str, dict | None]:
     return "new", None
 
 
+def semantic_duplicate(article: dict, candidates: list[dict]):
+    """Demande à un PETIT modèle (Groq 8b, gros quota) si l'article parle du MÊME
+    événement qu'un des candidats. Token-safe : 1 SEUL appel, titre + résumé court (≤300 car.)
+    + quelques titres candidats. Renvoie le candidat matché ou None. Dégrade en None si pas
+    de clé / erreur. Gère le multilingue (titre anglais vs historique français)."""
+    cands = [c for c in (candidates or []) if (c.get("article_title") or "").strip()][:6]
+    if not cands:
+        return None
+    try:
+        import os
+        import json as _json
+        from groq import Groq
+        client = Groq(api_key=os.environ["GROQ_API_KEY"])
+    except Exception:
+        return None
+    desc = (article.get("summary") or "").strip()[:300]
+    new = f"{(article.get('title_fr') or article.get('title', '')).strip()}" + (f" — {desc}" if desc else "")
+    lst = "\n".join(f"{i}. {c.get('article_title', '')[:120]}" for i, c in enumerate(cands))
+    prompt = (f"NOUVEL article :\n{new}\n\nArticles DÉJÀ publiés :\n{lst}\n\n"
+              "L'un des articles déjà publiés parle-t-il du MÊME ÉVÉNEMENT / fait précis que "
+              "le nouvel article (même annonce, même sujet, même chiffre clé) ? Les titres "
+              "peuvent être formulés autrement ou dans une autre langue.\n"
+              'Réponds en JSON : {"same": <true|false>, "i": <index de l\'article identique, sinon -1>}')
+    try:
+        model = os.environ.get("DEDUP_MODEL", "llama-3.1-8b-instant")
+        r = client.chat.completions.create(
+            model=model, temperature=0, max_tokens=40,
+            response_format={"type": "json_object"},
+            messages=[{"role": "system", "content": "Tu dédupliques l'actualité. JSON valide uniquement."},
+                      {"role": "user", "content": prompt}])
+        d = _json.loads(r.choices[0].message.content.strip())
+        i = int(d.get("i", -1))
+        if d.get("same") and 0 <= i < len(cands):
+            return cands[i]
+    except Exception as e:
+        print(f"[DEDUP] juge sémantique indispo ({type(e).__name__})")
+    return None
+
+
+def classify_smart(article: dict, history: list[dict]) -> tuple[str, dict | None]:
+    """classify() lexical (gratuit) PUIS, si « new » mais qu'il existe des candidats AMBIGUS
+    (même nom propre, ou similarité moyenne), un check SÉMANTIQUE par petit modèle (1 appel)."""
+    status, matched = classify(article, history)
+    if status != "new":
+        return status, matched
+    a_proper = {t for t in _anchors(article.get("title_fr") or article.get("title", ""))
+                if not _is_num(t)}
+    a_tokens = set(topic_key(article).split())
+    borderline = []
+    for h in history:
+        h_tokens = set((h.get("topic_key") or "").split())
+        if (a_proper & h_tokens) or (0.30 <= _jaccard(a_tokens, h_tokens) < SIM_THRESHOLD):
+            borderline.append(h)
+    if borderline:
+        m = semantic_duplicate(article, borderline)
+        if m:
+            return ("update" if _figures_changed(data_sig(article), m.get("data_sig", "")) else "duplicate"), m
+    return "new", None
+
+
 def annotate(article: dict) -> dict:
     """Pose les empreintes sur l'article (pour stockage / comparaison intra-run)."""
     article["topic_key"] = topic_key(article)

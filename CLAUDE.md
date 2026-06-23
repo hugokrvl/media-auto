@@ -414,11 +414,18 @@ dédup → carrousel (§7.8) → captions → Supabase. Marquées `source="Banqu
 article, deux empreintes comparées à l'historique 14 j (table `posts`) :
 - **`topic_key`** — de QUOI on parle : tokens du titre FR (sans accents/mots-outils, triés). Similarité = Jaccard.
 - **`data_sig`** — ce que DIT l'info : `label=valeur` des chiffres (ou points clés).
-- **Ancres entités/nombres** (`_anchors`) — noms propres (AbbVie, Apogee…) + nombres (10.9),
-  **invariants à la langue et à la reformulation**. Si deux articles partagent **≥2 ancres
-  dont ≥1 nom propre** → même info → **doublon**, même quand le Jaccard du titre échoue
-  (cas réel : une même news venue de sources différentes, titres tout autrement formulés —
-  le breaking dédoublonne d'ailleurs sur le titre anglais brut vs l'historique FR).
+- **Tokens significatifs + noms propres** (`_anchors`, `_GENERIC`) — deux articles sont un
+  doublon s'ils partagent **≥2 tokens significatifs** (hors mots génériques `_GENERIC` :
+  bourse/dollar/états-unis… et hors nombres nus) **dont ≥1 nom propre**. Attrape la même news
+  venue de sources différentes avec des titres tout autrement formulés, là où le Jaccard
+  échoue (ex. 4 titres distincts sur « Trump + quantique »). Le breaking fait une **2e passe
+  de dédup APRÈS enrichissement** (titre en français) car le 1er dédup compare le titre anglais
+  brut (« quantum » ≠ « quantique »).
+- **Juge sémantique** (`classify_smart` → `semantic_duplicate`) — filet final : si le lexical
+  dit « new » mais qu'il existe un candidat **ambigu** (même nom propre ou similarité moyenne),
+  un **PETIT modèle** (Groq 8b, `DEDUP_MODEL`) tranche en **1 seul appel** (titre + résumé court
+  vs quelques titres) « même événement ? ». Token-safe (gaté sur les seuls cas ambigus, sur les
+  ≤2 breaking / ≤10 nocturne), multilingue, et **dégrade en `new`** sans clé/erreur.
 
 | Verdict | Condition | Action |
 |---------|-----------|--------|

@@ -307,7 +307,8 @@ def main():
             dedup.annotate(a)
             try:
                 import storage as _store
-                _verdict, _ = dedup.classify(a, _store.get_recent_history(days=3))
+                # classify_smart : lexical + juge sémantique (8b) sur les cas ambigus.
+                _verdict, _ = dedup.classify_smart(a, _store.get_recent_history(days=3))
             except Exception:
                 _verdict = "new"
             if _verdict == "duplicate":

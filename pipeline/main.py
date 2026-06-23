@@ -91,9 +91,10 @@ def run():
             print(f"[MAIN] ⊘ Sans données chiffrées, écarté : {article['title'][:55]}")
             continue
 
-        # Verdict dédup (historique + posts déjà retenus cette nuit)
+        # Verdict dédup (historique + posts déjà retenus cette nuit) — lexical + juge
+        # sémantique (petit modèle) sur les cas ambigus (classify_smart).
         dedup.annotate(article)
-        status, matched = dedup.classify(article, history)
+        status, matched = dedup.classify_smart(article, history)
         if status == "duplicate":
             dups += 1
             print(f"[MAIN] ⊘ Doublon ignoré : {article['title'][:55]}")
