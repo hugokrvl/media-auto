@@ -73,6 +73,20 @@ def _anchors(title: str) -> set:
     return out
 
 
+# Mots TROP FRÉQUENTS pour identifier un sujet précis : ils ne comptent pas comme le
+# 2e token distinctif partagé (sinon « Tesla + bourse » dédupliquerait trop large).
+_GENERIC = {
+    "bourse", "marche", "marches", "action", "actions", "prix", "hausse", "baisse", "cours",
+    "dollar", "dollars", "euro", "euros", "titre", "titres", "groupe", "entreprise", "societe",
+    "milliard", "milliards", "million", "millions", "record", "resultats", "resultat",
+    "annonce", "annee", "semaine", "jour", "mois", "monde", "etats", "unis", "france",
+    "europe", "americain", "americaine", "francais", "francaise", "chinois", "europeen",
+    "nouveau", "nouvelle", "grand", "grande", "plan", "projet",
+    "stock", "stocks", "market", "markets", "price", "company", "deal", "billion",
+    "trillion", "news", "report", "update", "year", "week", "day", "world",
+}
+
+
 def data_sig(article: dict) -> str:
     """Empreinte de DONNÉES : 'label=valeur' triés (chart_data), sinon points clés."""
     parts = []
@@ -154,21 +168,24 @@ def classify(article: dict, history: list[dict]) -> tuple[str, dict | None]:
     tk = topic_key(article)
     ds = data_sig(article)
     a_tokens = set(tk.split())
-    a_anchors = _anchors(article.get("title_fr") or article.get("title", ""))
+    # Noms propres du titre (Trump, Bitcoin, AbbVie…), en minuscules comme les tokens.
+    a_proper = {t for t in _anchors(article.get("title_fr") or article.get("title", ""))
+                if not _is_num(t)}
 
     best, best_sim = None, 0.0
     for h in history:
         # 1. Même URL = même article -> doublon, sauf si les chiffres ont bougé
         if url and (h.get("article_url") or "").strip() == url:
             return ("update" if _figures_changed(ds, h.get("data_sig", "")) else "duplicate"), h
-        # 1bis. MÊME INFO, SOURCE DIFFÉRENTE : ≥2 ancres partagées (dont ≥1 nom propre)
-        #       → même sujet même si le titre est formulé tout autrement (multi-sources/langue).
-        if len(a_anchors) >= 2:
-            shared = a_anchors & _anchors(h.get("article_title", ""))
-            if len(shared) >= 2 and any(not _is_num(s) for s in shared):
-                return ("update" if _figures_changed(ds, h.get("data_sig", "")) else "duplicate"), h
-        # 2. Similarité de sujet (petit bonus si même catégorie)
         h_tokens = set((h.get("topic_key") or "").split())
+        # 1bis. MÊME INFO, SOURCES DIFFÉRENTES : ≥2 tokens significatifs partagés (hors mots
+        #       génériques) dont AU MOINS un nom propre → même sujet même si formulé tout
+        #       autrement (ex. 4 titres distincts sur « Trump + quantique »). Robuste là où
+        #       le Jaccard du titre échoue.
+        shared_dist = {t for t in (a_tokens & h_tokens)
+                       if t not in _GENERIC and not t.isdigit()}   # exclut mots génériques + nombres nus
+        if len(shared_dist) >= 2 and (shared_dist & a_proper):
+            return ("update" if _figures_changed(ds, h.get("data_sig", "")) else "duplicate"), h
         sim = _jaccard(a_tokens, h_tokens)
         if h.get("category") and h.get("category") == article.get("category"):
             sim += 0.05

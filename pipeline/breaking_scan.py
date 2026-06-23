@@ -300,6 +300,20 @@ def main():
     for a in kept:
         try:
             enrich(a)
+            # 2e DÉDUP, APRÈS enrich : le titre est maintenant en FRANÇAIS. Le 1er dédup
+            # (dedupe(), titre anglais brut) rate les mêmes sujets venus de sources/langues
+            # différentes (« quantum » ≠ « quantique »). Ici on recompare en français →
+            # attrape les répétitions multi-sources (ex. 4 posts sur le décret quantique de Trump).
+            dedup.annotate(a)
+            try:
+                import storage as _store
+                _verdict, _ = dedup.classify(a, _store.get_recent_history(days=3))
+            except Exception:
+                _verdict = "new"
+            if _verdict == "duplicate":
+                print(f"[SCAN] ⊘ doublon FR (après enrich) : {a.get('title_fr', '')[:48]}")
+                continue
+
             # BARRIÈRE QA + AUTO-CORRECTION : on essaie les visuels candidats l'un après
             # l'autre ; chacun doit passer la vérif vision. Les ratés sont GARDÉS (trace).
             attempts, chosen = [], None
