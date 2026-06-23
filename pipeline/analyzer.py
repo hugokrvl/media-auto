@@ -241,10 +241,19 @@ DECRYPT_ICONS = ("reseau, cadenas, banque, echange, hausse, baisse, barres, bouc
                  "ampoule, portefeuille, cible, alerte, horloge, piece, groupe, document, "
                  "balance, bitcoin")
 
+# Correction des coquilles de noms propres dues aux transcriptions YouTube (token-free :
+# c'est de la consigne, pas un appel IA en plus). Prudence : corriger SEULEMENT si certain.
+NAME_FIX = ("CORRECTION DES NOMS : une transcription peut déformer les noms propres "
+            "(ex. « Yann Lequin » → « Yann LeCun », « Nvidia » → « NVIDIA », « Open Eye » → "
+            "« OpenAI »). Quand tu RECONNAIS AVEC CERTITUDE la personne/entreprise réelle, "
+            "écris son nom OFFICIEL exact ; si tu n'es PAS sûr, garde le nom TEL QUEL "
+            "(n'invente JAMAIS un nom).")
+
 DECRYPT_SYS = ("Tu es journaliste-vulgarisateur. Tu transformes un contenu (transcription "
                "vidéo, article…) en un DÉCRYPTAGE visuel en carrousel : des slides au titre "
                "fort, chaque point illustré d'une icône et d'un chiffre/mot-clé à surligner. "
-               "Tout EN FRANÇAIS, FACTUEL, tu n'inventes RIEN. Réponds UNIQUEMENT en JSON valide.")
+               "Tout EN FRANÇAIS, FACTUEL, tu n'inventes RIEN. " + NAME_FIX
+               + " Réponds UNIQUEMENT en JSON valide.")
 
 DECRYPT_PROMPT = """Transforme ce contenu en un DÉCRYPTAGE pour carrousel Instagram (3 à 5 slides).
 JSON EXACTEMENT :
@@ -378,7 +387,8 @@ def _clean_slides(raw_slides) -> list[dict]:
 SPLIT_SYS = ("Tu es chef d'édition. Le texte reçu peut couvrir PLUSIEURS sujets sans rapport. "
              "Tu le découpes en POSTS DISTINCTS : 1 SUJET = 1 POST (jamais deux sujets mélangés). "
              "Un sujet RICHE (≥4 faits) → décryptage ; un sujet MINCE (1-2 faits) → brève "
-             "(titre + 1 phrase + photo). EN FRANÇAIS, FACTUEL, tu n'inventes RIEN. JSON valide.")
+             "(titre + 1 phrase + photo). EN FRANÇAIS, FACTUEL, tu n'inventes RIEN. "
+             + NAME_FIX + " JSON valide.")
 
 SPLIT_PROMPT = """Découpe ce contenu en 1 à 4 POSTS, UN PAR SUJET distinct.
 JSON EXACTEMENT :

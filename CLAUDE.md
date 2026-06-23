@@ -963,6 +963,10 @@ Flux (réutilise l'infra transcription) :
   callout « à retenir » est dimensionné au texte mesuré (`_flow_rich(draw=False)`).
 - L'IA choisit l'`icon` (parmi la liste) et le `fort` (extrait EXACT de `texte`) par point ;
   repli mot-clé puis pastille si l'icône est absente/inconnue (`decrypt_light._icon_for`).
+- **Correction des noms** (`analyzer.NAME_FIX`, **zéro token en plus** — consigne dans le
+  prompt, pas d'appel) : le 70b rétablit l'orthographe officielle des figures qu'il reconnaît
+  avec certitude (transcription YouTube : « Yann Lequin » → « Yann LeCun ») ; sinon garde tel
+  quel (n'invente jamais). Injecté dans `SPLIT_SYS` et `DECRYPT_SYS`.
 - **Dégradations** : pas de clé Unsplash → slides/brèves sans photo (rendu propre quand même,
   brève = gros pictogramme) ; découpe vide → repli sur UN décryptage (`enrich_decryptage`) ;
   renderer KO → repli infographie. Le site statique met en **file** ; le workflow agit.
